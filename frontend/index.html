@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>執譜機</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23f2a33a'/><circle cx='16' cy='16' r='7' fill='%23161412'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#/">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="var(--accent)"/><circle cx="16" cy="16" r="7" fill="var(--bg)"/><circle cx="16" cy="16" r="2.5" fill="var(--accent)"/></svg>
+    <span>執譜機</span><span class="muted small" style="font-weight:400">v6</span>
+  </a>
+  <div class="song-head" id="songHead" hidden>
+    <input id="songTitle" class="title-input" spellcheck="false" aria-label="歌名">
+    <span id="songMeta" class="muted small"></span>
+  </div>
+  <div class="head-actions" id="headActions" hidden>
+    <button class="btn ghost" id="btnScoreSettings" title="譜設定">⚙ 譜設定</button>
+    <button class="btn" id="btnPdf" title="下載 PDF">⤓ PDF</button>
+    <button class="btn" id="btnDrive" title="匯出 PDF + 音軌去 Google Drive 資料夾">☁ 上 Drive</button>
+  </div>
+  <span id="sysInfo" class="muted small sys"></span>
+  <button class="btn ghost sm" id="btnSettings" title="設定">⚙ 設定</button>
+</header>
+
+<!-- ============================== HOME ============================== -->
+<main id="home" class="home">
+  <section class="hero">
+    <h1>貼條 YouTube 連結，<br>幫你執好鼓譜。</h1>
+    <form id="newForm" class="new-form">
+      <input id="urlInput" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required>
+      <select id="langSelect" title="歌詞語言">
+        <option value="auto">自動偵測語言</option>
+        <option value="yue">廣東話</option>
+        <option value="zh">普通話</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+      </select>
+      <button class="btn primary" type="submit">開始分析</button>
+    </form>
+    <p class="muted small">或者 <label class="link">上載 MP3 / WAV<input type="file" id="fileInput" accept="audio/*,video/*" hidden></label>　·　分析一首歌大約要 2–6 分鐘</p>
+  </section>
+  <section>
+    <h2 class="section-title">我嘅歌</h2>
+    <div id="library" class="library"></div>
+  </section>
+</main>
+
+<!-- ============================== SONG ============================== -->
+<main id="song" class="song" hidden>
+  <div class="progress-panel" id="progressPanel" hidden>
+    <div class="pp-stage" id="ppStage">準備緊…</div>
+    <div class="bar"><div id="ppBar"></div></div>
+    <ol class="pp-steps" id="ppSteps"></ol>
+    <pre class="pp-log" id="ppLog"></pre>
+    <div class="pp-error" id="ppError" hidden></div>
+  </div>
+
+  <div class="workspace" id="workspace" hidden>
+    <div class="toolbar">
+      <div class="chips" id="trackChips" role="tablist"></div>
+      <div class="tool-right">
+        <label class="mini">歌詞
+          <select id="lyricsMode">
+            <option value="line">譜上逐句</option>
+            <option value="word">譜下逐字</option>
+            <option value="off">唔顯示</option>
+          </select>
+        </label>
+        <button class="btn ghost sm" id="btnEditLyrics">改歌詞</button>
+        <span class="sep"></span>
+        <button class="btn ghost sm" id="btnEdit" title="改譜：先撳一下譜上面要改嘅位置，再撳呢度（E 鍵）">✏️ 改譜</button>
+        <button class="btn ghost sm" id="btnUndo" title="還原上一個改動" hidden>↶ 還原</button>
+        <button class="btn ghost sm toggle" id="btnChords" aria-pressed="true" title="譜上面顯示和弦">和弦</button>
+        <button class="btn ghost sm toggle" id="btnSim" aria-pressed="false" title="顯示而家要打 / 撳邊度（S 鍵）">🎮 模擬器</button>
+        <span class="sep"></span>
+        <button class="btn ghost sm icon" id="zoomOut" title="縮細">−</button>
+        <span class="mono small" id="zoomVal">100%</span>
+        <button class="btn ghost sm icon" id="zoomIn" title="放大">+</button>
+      </div>
+    </div>
+
+    <div class="lyrics-bar" id="lyricsBar"><div class="ly-now" id="lyNow">&nbsp;</div><div class="ly-next" id="lyNext">&nbsp;</div></div>
+
+    <div class="sim" id="sim" hidden></div>
+
+    <div class="score-wrap" id="scoreWrap">
+      <div id="score"></div>
+      <div class="score-loading" id="scoreLoading">載入緊樂譜…</div>
+    </div>
+
+    <aside class="mixer" id="mixer" hidden>
+      <div class="mixer-head"><b>混音</b><button class="btn ghost sm" id="mixReset">重設</button></div>
+      <div id="mixerRows"></div>
+    </aside>
+
+    <footer class="transport">
+      <div class="seek-row">
+        <span class="mono small" id="tNow">0:00</span>
+        <div class="seek">
+          <div class="loop-range" id="loopRange" hidden></div>
+          <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="位置">
+        </div>
+        <span class="mono small" id="tDur">0:00</span>
+      </div>
+      <div class="ctrl-row">
+        <div class="grp">
+          <button class="btn icon" id="btnBack" title="返去開頭 (Home)">⏮</button>
+          <button class="btn primary play" id="btnPlay" title="播放 / 暫停 (Space)">▶</button>
+          <button class="btn ghost sm" id="btnA" title="設定循環起點">A</button>
+          <button class="btn ghost sm" id="btnB" title="設定循環終點">B</button>
+          <button class="btn ghost sm" id="btnLoopClear" title="取消循環" hidden>✕ 循環</button>
+        </div>
+        <div class="grp">
+          <div class="ctl stepper" role="group" aria-label="速度">速度
+            <button class="btn ghost xs" type="button" data-speed="-0.5" title="慢 0.5">−0.5</button>
+            <button class="btn ghost xs" type="button" data-speed="-0.1" title="慢 0.1（[ 鍵）">−0.1</button>
+            <button class="mono val valbtn" type="button" id="speedVal" title="撳一下返原速 1.0×">1.0×</button>
+            <button class="btn ghost xs" type="button" data-speed="0.1" title="快 0.1（] 鍵）">+0.1</button>
+            <button class="btn ghost xs" type="button" data-speed="0.5" title="快 0.5">+0.5</button>
+          </div>
+          <div class="ctl stepper" role="group" aria-label="總音量">總音量
+            <button class="btn ghost xs" type="button" data-vol="-10" title="細聲 10">−10</button>
+            <button class="btn ghost xs" type="button" data-vol="-5" title="細聲 5（↓ 鍵）">−5</button>
+            <span class="mono val" id="volVal">90</span>
+            <button class="btn ghost xs" type="button" data-vol="5" title="大聲 5（↑ 鍵）">+5</button>
+            <button class="btn ghost xs" type="button" data-vol="10" title="大聲 10">+10</button>
+          </div>
+        </div>
+        <div class="grp">
+          <button class="btn ghost sm toggle" id="btnMetro" aria-pressed="false" title="拍子機 (M)">♩ 拍子機</button>
+          <input type="range" id="metroVol" min="0" max="100" value="70" title="拍子機音量" class="short">
+          <button class="btn ghost sm toggle" id="btnCountIn" aria-pressed="false" title="播之前數一小節">預備拍</button>
+          <span class="mono small" id="bpmVal"></span>
+        </div>
+        <div class="grp">
+          <label class="ctl practice" title="練習模式：收埋某件樂器，自己夾">🎯
+            <select id="practice">
+              <option value="full">原曲</option>
+              <option value="drums">🥁 無鼓（打鼓練習）</option>
+              <option value="vocals">🎤 無人聲（唱 K）</option>
+              <option value="guitar">🎸 無結他</option>
+              <option value="bass">🎸 無 Bass</option>
+              <option value="piano">🎹 無琴</option>
+              <option value="drumsOnly">淨鼓（聽清楚鼓）</option>
+              <option value="rhythm">節奏組（淨鼓 + Bass）</option>
+              <option value="vocalsOnly">淨人聲（學旋律 / 歌詞）</option>
+              <option value="custom" disabled>自訂（用混音調）</option>
+            </select>
+          </label>
+          <button class="btn ghost sm toggle" id="btnMixer" aria-pressed="false">🎚 混音</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+</main>
+
+<!-- ============================== DIALOGS ============================== -->
+<dialog id="dlgLyrics" class="dlg wide">
+  <form method="dialog">
+    <h3>改歌詞</h3>
+    <p class="muted small" id="lySource"></p>
+    <details class="ly-search" id="lySearchBox">
+      <summary>🔍 網上搵歌詞（LRCLIB）</summary>
+      <div class="ly-search-row">
+        <input type="text" id="lyqTrack" placeholder="歌名" spellcheck="false">
+        <input type="text" id="lyqArtist" placeholder="歌手（可以留空）" spellcheck="false">
+        <button class="btn sm" type="button" id="lyqGo">搵</button>
+      </div>
+      <div class="ly-results" id="lyResults"></div>
+    </details>
+    <div class="ly-shift">
+      <span class="small muted">成首歌詞時間：</span>
+      <button class="btn ghost xs" type="button" data-shift="-0.5">提早 0.5s</button>
+      <button class="btn ghost xs" type="button" data-shift="-0.1">提早 0.1s</button>
+      <button class="btn ghost xs" type="button" data-shift="0.1">延遲 0.1s</button>
+      <button class="btn ghost xs" type="button" data-shift="0.5">延遲 0.5s</button>
+      <span class="small muted" id="lyShiftVal"></span>
+    </div>
+    <p class="muted small">每句可以改字同時間。播放時㩒「⏱」會將嗰句設定喺而家嘅位置。</p>
+    <div class="ly-edit" id="lyEditRows"></div>
+    <div class="dlg-row">
+      <button class="btn ghost sm" type="button" id="lyAdd">＋ 加一句（而家位置）</button>
+      <button class="btn ghost sm" type="button" id="lyPaste">貼全首歌詞…</button>
+      <span class="grow"></span>
+      <button class="btn ghost" value="cancel">取消</button>
+      <button class="btn primary" type="button" id="lySave">儲存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgScore" class="dlg">
+  <form method="dialog">
+    <h3>譜設定</h3>
+    <p class="muted small">如果小節線位置唔啱、速度快咗一倍，喺度校正，然後重新整譜。</p>
+    <label class="field">拍號
+      <select id="optMeter"><option value="">自動</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select>
+    </label>
+    <label class="field">小節線
+      <span class="inline"><button class="btn ghost sm" type="button" id="optShiftL">◀ 移前一拍</button><span class="mono" id="optShiftVal">0</span><button class="btn ghost sm" type="button" id="optShiftR">移後一拍 ▶</button></span>
+    </label>
+    <label class="field">速度
+      <select id="optTempo"><option value="1">照偵測</option><option value="2">× 2（偵測慢咗一半）</option><option value="0.5">÷ 2（偵測快咗一倍）</option></select>
+    </label>
+    <label class="field check"><input type="checkbox" id="optTriplets" checked> 容許三連音</label>
+    <hr>
+    <label class="field">顯示
+      <select id="optStave"><option value="auto">自動（鼓：五線譜；結他/Bass：五線譜 + TAB）</option><option value="score">只要五線譜</option><option value="tab">只要 TAB</option></select>
+    </label>
+    <div class="dlg-row">
+      <button class="btn ghost sm" type="button" id="optReanalyze" title="由頭再分析（例如裝完新版之後想執埋其他樂器）">↻ 重新分析成首歌</button>
+      <span class="grow"></span>
+      <button class="btn ghost" value="cancel">取消</button>
+      <button class="btn primary" type="button" id="optApply">重新整譜</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgPdf" class="dlg">
+  <form method="dialog">
+    <h3>下載 PDF</h3>
+    <p class="muted small">揀樂器，A4 直度，可以直接打印或者 send 俾樂手。</p>
+    <div id="pdfTracks" class="pdf-tracks"></div>
+    <label class="field check"><input type="checkbox" id="pdfLyrics" checked> 包括歌詞</label>
+    <label class="field">每行幾多小節
+      <select id="pdfBars"><option value="0">自動</option><option>2</option><option selected>4</option><option>5</option><option>6</option></select>
+    </label>
+    <div class="dlg-row"><span class="grow"></span><button class="btn ghost" value="cancel">取消</button><button class="btn primary" type="button" id="pdfGo">下載 PDF</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgSettings" class="dlg">
+  <form method="dialog">
+    <h3>設定</h3>
+    <label class="field">匯出資料夾（Google Drive）
+      <input type="text" id="cfgDir" placeholder="例如 G:\My Drive　或　/Users/你/Library/CloudStorage/GoogleDrive-…/My Drive" spellcheck="false">
+      <span class="small muted" id="cfgDetected"></span>
+    </label>
+    <p class="small muted">裝咗 <a href="https://www.google.com/drive/download/" target="_blank" rel="noopener">Google Drive for desktop</a> 之後，揀佢個「我的雲端硬碟 / My Drive」資料夾。歌會放喺入面嘅「執譜機」資料夾，手機開 Google Drive 就見到。</p>
+    <label class="field check"><input type="checkbox" id="cfgAuto"> 分析完自動匯出（改歌詞 / 改譜之後都會自動更新）</label>
+    <label class="field check"><input type="checkbox" id="cfgStems"> 連埋分離咗嘅音軌（MP3）一齊匯出</label>
+    <label class="field">PDF 樂器
+      <select id="cfgInst"><option value="all">偵測到嘅所有樂器（每件一份）</option><option value="drums">只要鼓譜</option></select>
+    </label>
+    <label class="field">PDF 歌詞
+      <select id="cfgLyrics"><option value="line">譜上逐句</option><option value="word">譜下逐字</option><option value="off">唔要</option></select>
+    </label>
+    <label class="field">PDF 每行小節
+      <select id="cfgBars"><option value="0">自動</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+    </label>
+    <hr>
+    <label class="field">歌詞模型（Whisper）
+      <select id="cfgWhisper">
+        <option value="auto">自動（按顯示卡 / 記憶體揀）</option>
+        <option value="large-v3">large-v3（最準，最慢）</option>
+        <option value="turbo">turbo（快好多）</option>
+        <option value="medium">medium</option>
+        <option value="small">small（最快）</option>
+      </select>
+    </label>
+    <div class="dlg-row"><span class="small muted" id="cfgPdfWarn"></span><span class="grow"></span><button class="btn ghost" value="cancel">取消</button><button class="btn primary" type="button" id="cfgSave">儲存</button></div>
+  </form>
+</dialog>
+
+
+<dialog id="dlgEdit" class="dlg editor">
+  <form method="dialog">
+    <div class="ed-top">
+      <button class="btn ghost sm" type="button" id="edPrev" title="上一小節">◀</button>
+      <h3 id="edTitle">第 1 小節</h3>
+      <button class="btn ghost sm" type="button" id="edNext" title="下一小節">▶</button>
+      <span class="badge" id="edTarget">鼓</span>
+      <span class="grow"></span>
+      <button class="btn ghost sm" type="button" id="edListen" title="循環播呢小節（原曲）">🔁 聽呢小節</button>
+      <button class="btn ghost sm" type="button" id="edStop">⏸</button>
+    </div>
+    <div class="ed-tools">
+      <span class="small muted">每拍：</span>
+      <button class="btn ghost xs toggle" type="button" id="edSub4">4 格（16 分）</button>
+      <button class="btn ghost xs toggle" type="button" id="edSub3">3 格（三連音）</button>
+      <span id="edLenBox"><span class="small muted">　新音長度：</span><span id="edLen"></span></span>
+      <span id="edPitchBtns"><button class="btn ghost xs" type="button" id="edUp">▲ 高啲</button><button class="btn ghost xs" type="button" id="edDown">▼ 低啲</button></span>
+      <span class="grow"></span>
+      <button class="btn ghost xs" type="button" id="edCopyPrev">複製上一小節</button>
+      <button class="btn ghost xs danger" type="button" id="edClear">清空</button>
+    </div>
+    <div class="ed-grid-wrap"><div class="ed-grid" id="edGrid"></div></div>
+    <div class="ed-chords" id="edChords"></div>
+    <p class="small muted">撳格仔加 / 刪音符。改完撳「儲存」，譜、模擬器同 PDF 會一齊更新。</p>
+    <div class="dlg-row">
+      <button class="btn ghost sm" type="button" id="edUndo">↶ 還原上一個改動</button>
+      <span class="grow"></span>
+      <button class="btn ghost" value="cancel">閂</button>
+      <button class="btn primary" type="button" id="edSave">儲存呢小節</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="alphatab-loader.js"></script>
+<script src="shared.js"></script>
+<script src="simulator.js"></script>
+<script src="app.js"></script>
+<script src="editor.js"></script>
+</body>
+</html>

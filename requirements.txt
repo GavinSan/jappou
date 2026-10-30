@@ -1,0 +1,28 @@
+# torch / torchaudio are installed first by install.bat (CUDA build)
+numpy<2
+scipy
+soundfile
+librosa>=0.10
+pretty_midi
+imageio-ffmpeg
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart
+yt-dlp[default]
+demucs==4.0.1
+lameenc
+beat-this
+einops
+rotary-embedding-torch
+soxr
+openai-whisper
+opencc-python-reimplemented
+PyGuitarPro
+playwright
+mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
+adtof-pytorch @ https://github.com/xavriley/ADTOF-pytorch/archive/refs/heads/main.zip
+# Basic Pitch runtime (Basic Pitch itself is installed with --no-deps to skip TensorFlow)
+onnxruntime
+mir_eval
+scikit-learn
+resampy<0.4.3

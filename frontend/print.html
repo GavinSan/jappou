@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<title>執譜機 PDF</title>
+<style>
+  @page { size: A4; margin: 12mm 10mm 14mm; }
+  html, body { margin: 0; background: #fff; }
+  body { font-family: "Noto Sans HK", "PingFang HK", "Microsoft JhengHei", sans-serif; }
+  #sheet { width: 190mm; margin: 0 auto; }
+  /* let alphaTab's absolutely positioned rows flow so the browser can break pages between them */
+  .at-surface { width: auto !important; height: auto !important; }
+  .at-surface > div { position: relative !important; left: auto !important; top: auto !important; break-inside: avoid; }
+  .footer-note { font-size: 9px; color: #999; text-align: right; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="sheet"></div>
+<div class="footer-note" id="note"></div>
+<script src="alphatab-loader.js"></script>
+<script src="shared.js"></script>
+<script src="print.js"></script>
+</body>
+</html>
