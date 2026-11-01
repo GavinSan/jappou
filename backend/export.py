@@ -11,8 +11,8 @@ import threading
 import time
 from pathlib import Path
 
-CHIP_LABELS = {"drums": "鼓", "vocals": "人聲旋律", "guitar": "結他", "bass": "Bass", "piano": "琴", "other": "其他"}
-CHIP_TRACKS = {"drums": ["drums"], "vocals": ["vocals"], "guitar": ["guitar"], "bass": ["bass"],
+CHIP_LABELS = {"drums": "鼓", "vocals": "人聲旋律", "guitar": "結他 Chord", "lead": "結他 Solo", "bass": "Bass", "piano": "琴", "other": "其他"}
+CHIP_TRACKS = {"drums": ["drums"], "vocals": ["vocals"], "guitar": ["guitar_rhythm"], "lead": ["guitar_lead"], "bass": ["bass"],
                "piano": ["piano_rh", "piano_lh"], "other": ["other"]}
 STEM_LABELS = {"drums": "鼓", "vocals": "人聲", "guitar": "結他", "bass": "Bass", "piano": "琴", "other": "其他"}
 

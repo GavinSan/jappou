@@ -196,6 +196,7 @@ def patch_job(job_id: str, body: Meta):
 
 
 class ScoreOptions(BaseModel):
+    guitarSens: str = "mid"
     meter: int | None = None
     shift: int = 0
     tempoFactor: float = 1
@@ -208,7 +209,13 @@ def rescore(job_id: str, body: ScoreOptions):
     if job.meta.get("status") != "done":
         raise HTTPException(409, "未分析完")
     with _lock:
-        pipeline.rebuild_score(job, body.model_dump())
+        if body.guitarSens != (job.meta.get("scoreOptions") or {}).get("guitarSens", "mid"):
+            import editing
+            editing.snapshot(job, "guitarsens")  # the solo part is re-detected: keep an undo step
+            pipeline.rebuild_score(job, body.model_dump())
+            job.set(editCount=int(job.meta.get("editCount", 0)) + 1)
+        else:
+            pipeline.rebuild_score(job, body.model_dump())
     _maybe_reexport(job)
     return job.meta
 
@@ -418,7 +425,7 @@ def undo_edit(job_id: str):
 @app.get("/api/jobs/{job_id}/file/{name}")
 def job_file(job_id: str, name: str):
     job = _job(job_id)
-    allowed = {"score.gp5", "timing.json", "lyrics.json", "drums.json", "notes.json", "chords.json"}
+    allowed = {"score.gp5", "timing.json", "lyrics.json", "drums.json", "notes.json", "chords.json", "strums.json"}
     if name not in allowed:
         raise HTTPException(404)
     p = job.folder / name

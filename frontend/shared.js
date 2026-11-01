@@ -5,7 +5,8 @@
   const CHIPS = [
     { key: 'drums', label: '鼓', tracks: ['drums'] },
     { key: 'vocals', label: '人聲旋律', tracks: ['vocals'] },
-    { key: 'guitar', label: '結他', tracks: ['guitar'] },
+    { key: 'guitar', label: '結他 Chord', tracks: ['guitar_rhythm'] },
+    { key: 'lead', label: '結他 Solo', tracks: ['guitar_lead'] },
     { key: 'bass', label: 'Bass', tracks: ['bass'] },
     { key: 'piano', label: '琴', tracks: ['piano_rh', 'piano_lh'] },
     { key: 'other', label: '其他', tracks: ['other'] },
@@ -25,7 +26,8 @@
 
   function staveProfileFor(chip, stave) {
     const P = alphaTab.StaveProfile;
-    const fretted = chip === 'guitar' || chip === 'bass';
+    if (chip === 'guitar') return P.ScoreTab;   // chord part: slashes (+ optional TAB), see setRhythmStaff
+    const fretted = chip === 'lead' || chip === 'bass';
     if (stave === 'score') return P.Score;
     if (stave === 'tab') return fretted ? P.Tab : P.Score;
     return fretted ? P.ScoreTab : P.Score;
@@ -47,6 +49,18 @@
     const k = Math.max(0, Math.min(b.length - 1, Math.floor(p)));
     const next = k + 1 < b.length ? b[k + 1].time : timing.endTime;
     return b[k].time + (p - k) * (next - b[k].time);
+  }
+
+  /** chord part: rhythm slashes (like a band chart), optionally with the TAB of each shape */
+  function setRhythmStaff(score, metaTracks, withTab) {
+    const t = (metaTracks || []).find(x => x.key === 'guitar_rhythm');
+    const tr = t && score.tracks[t.index];
+    if (!tr) return;
+    for (const st of tr.staves) {
+      st.showSlash = true;
+      st.showStandardNotation = false;
+      st.showTablature = !!withTab;
+    }
   }
 
   /** basic fixes after loading one of our GP5 files */
@@ -237,6 +251,6 @@
   }
 
   window.JP = { CHIPS, chipAvailable, tracksForChip, staveProfileFor, timeToBeatPos, beatPosToTime,
-    prepareScore, applySyncPoints, applyLyricsToScore,
+    prepareScore, applySyncPoints, applyLyricsToScore, setRhythmStaff,
     parseChord, guitarVoicing, applyChordsToScore, NAMES_SHARP, NAMES_FLAT };
 })();

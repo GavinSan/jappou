@@ -53,7 +53,7 @@
     /** tracks: alphaTab Track objects for the selected chip; chip: drums|guitar|bass|piano|vocals|other */
     setTracks(tracks, chip, timing) {
       this.timing = timing;
-      this.kind = chip === 'drums' ? 'drums' : (chip === 'guitar' || chip === 'bass') ? 'fret' : 'keys';
+      this.kind = chip === 'drums' ? 'drums' : (chip === 'guitar' || chip === 'lead' || chip === 'bass') ? 'fret' : 'keys';
       this.chip = chip;
       this.events = this._collect(tracks || [], this.kind);
       this.lastKey = '';
@@ -362,7 +362,7 @@
       if (this.kind === 'fret') {
         this.ghostLayer.innerHTML = '';
         if (!c) return;
-        if (this.chip === 'guitar' && this.nStr === 6) {
+        if ((this.chip === 'guitar' || this.chip === 'lead') && this.nStr === 6) {
           const v = JP.guitarVoicing(c);
           if (!v) return;
           v.forEach((f, i) => {

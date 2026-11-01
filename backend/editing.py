@@ -9,8 +9,8 @@ import shutil
 
 import pipeline
 
-EDIT_FILES = ("drums.json", "notes.json", "chords.json")
-PITCHED = ("vocals", "guitar", "bass", "other", "piano")
+EDIT_FILES = ("drums.json", "notes.json", "chords.json", "strums.json")
+PITCHED = ("vocals", "guitar", "guitar_lead", "bass", "other", "piano")
 
 
 def _read(path, default):
@@ -34,7 +34,7 @@ def apply_edit(job: pipeline.Job, target: str, t0: float, t1: float, events: lis
     t0, t1 = float(t0), float(t1)
     if not (t1 > t0):
         raise ValueError("時間範圍唔啱")
-    if target not in ("drums", "chords") + PITCHED:
+    if target not in ("drums", "chords", "strums") + PITCHED:
         raise ValueError("唔識改呢樣")
     f = job.folder
     snapshot(job, target)
@@ -44,6 +44,12 @@ def apply_edit(job: pipeline.Job, target: str, t0: float, t1: float, events: lis
             data.append({"time": round(float(e["time"]), 4), "note": int(e["note"]), "vel": int(e.get("vel", 100))})
         data.sort(key=lambda d: d["time"])
         (f / "drums.json").write_text(json.dumps(data), "utf-8")
+    elif target == "strums":
+        data = [d for d in _read(f / "strums.json", []) if not (t0 <= d["time"] < t1)]
+        for e in events:
+            data.append({"time": round(float(e["time"]), 4), "s": 1.0})   # hand-placed strums always count
+        data.sort(key=lambda d: d["time"])
+        (f / "strums.json").write_text(json.dumps(data), "utf-8")
     elif target in PITCHED:
         notes = _read(f / "notes.json", {})
         keys = ["piano_rh", "piano_lh"] if target == "piano" else [target]
@@ -93,7 +99,7 @@ def undo(job: pipeline.Job):
     for name in EDIT_FILES:
         if (last / name).exists():
             shutil.copy2(last / name, job.folder / name)
-        elif (job.folder / name).exists() and name == "chords.json":
+        elif (job.folder / name).exists() and name in ("chords.json", "strums.json"):
             (job.folder / name).unlink()  # didn't exist before that edit
     shutil.rmtree(last, ignore_errors=True)
     job = pipeline.Job(job.folder)

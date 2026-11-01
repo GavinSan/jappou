@@ -46,6 +46,7 @@
     // scoreLoaded fires before the first render, so lyrics/title are in place for it
     at.scoreLoaded.on(score => {
       JP.prepareScore(score, meta);
+      JP.setRhythmStaff(score, metaTracks, stave === 'tab');
       const tracks = JP.tracksForChip(score, metaTracks, chip);
       JP.applyLyricsToScore(score, timing, lyrics, tracks[0], lyricsMode);
       JP.applyChordsToScore(score, timing, chordData.chords || [], tracks, { diagrams: chip === 'guitar' });

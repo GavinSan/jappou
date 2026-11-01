@@ -13,7 +13,7 @@
 <header class="topbar">
   <a class="brand" href="#/">
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="var(--accent)"/><circle cx="16" cy="16" r="7" fill="var(--bg)"/><circle cx="16" cy="16" r="2.5" fill="var(--accent)"/></svg>
-    <span>執譜機</span><span class="muted small" style="font-weight:400">v6</span>
+    <span>執譜機</span><span class="muted small" style="font-weight:400">v7</span>
   </a>
   <div class="song-head" id="songHead" hidden>
     <input id="songTitle" class="title-input" spellcheck="false" aria-label="歌名">
@@ -209,9 +209,17 @@
       <select id="optTempo"><option value="1">照偵測</option><option value="2">× 2（偵測慢咗一半）</option><option value="0.5">÷ 2（偵測快咗一倍）</option></select>
     </label>
     <label class="field check"><input type="checkbox" id="optTriplets" checked> 容許三連音</label>
+    <label class="field">結他靈敏度（分 Chord / Solo）
+      <select id="optGuitarSens">
+        <option value="low">低：淨係清楚嘅 solo，Chord 部分少啲掃弦</option>
+        <option value="mid">中（預設）</option>
+        <option value="high">高：執多啲 solo 音同掃弦（可能多雜音）</option>
+      </select>
+      <span class="small muted">改咗會重新揀 Solo 嘅音（你喺 Solo 改過嘅嘢會被覆蓋，可以還原）</span>
+    </label>
     <hr>
     <label class="field">顯示
-      <select id="optStave"><option value="auto">自動（鼓：五線譜；結他/Bass：五線譜 + TAB）</option><option value="score">只要五線譜</option><option value="tab">只要 TAB</option></select>
+      <select id="optStave"><option value="auto">自動（結他 Chord：斜線譜；Solo / Bass：五線譜 + TAB）</option><option value="score">只要五線譜</option><option value="tab">只要 TAB（結他 Chord：斜線 + TAB）</option></select>
     </label>
     <div class="dlg-row">
       <button class="btn ghost sm" type="button" id="optReanalyze" title="由頭再分析（例如裝完新版之後想執埋其他樂器）">↻ 重新分析成首歌</button>

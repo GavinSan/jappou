@@ -35,13 +35,15 @@ class TrackSpec:
 SPECS = {
     "drums": TrackSpec("drums", "Drums 鼓", 0, [0] * 6, 0, 127, 6, percussion=True),
     "bass": TrackSpec("bass", "Bass", 33, [43, 38, 33, 28], 28, 67, 1, keep="low", fretted=True),
-    "guitar": TrackSpec("guitar", "Guitar 結他", 27, [64, 59, 55, 50, 45, 40], 40, 88, 6, fretted=True),
+    "guitar": TrackSpec("guitar", "Guitar 結他（全部音）", 27, [64, 59, 55, 50, 45, 40], 40, 88, 6, fretted=True),
+    "guitar_rhythm": TrackSpec("guitar_rhythm", "Guitar Chord 結他和弦", 25, [64, 59, 55, 50, 45, 40], 40, 88, 6, fretted=True),
+    "guitar_lead": TrackSpec("guitar_lead", "Guitar Solo 結他 Solo", 27, [64, 59, 55, 50, 45, 40], 47, 96, 1, keep="high", fretted=True),
     "piano_rh": TrackSpec("piano_rh", "Piano 琴 (右手)", 0, [108, 96, 84, 72, 60, 48], 60, 108, 5),
     "piano_lh": TrackSpec("piano_lh", "Piano 琴 (左手)", 0, [72, 60, 48, 36, 24, 21], 21, 59, 4, keep="low"),
     "vocals": TrackSpec("vocals", "Vocal 人聲旋律", 53, [96, 84, 72, 60, 48, 36], 40, 84, 1),
     "other": TrackSpec("other", "Other 其他", 48, [108, 96, 84, 72, 60, 48], 48, 100, 3),
 }
-TRACK_ORDER = ["drums", "vocals", "guitar", "bass", "piano_rh", "piano_lh", "other"]
+TRACK_ORDER = ["drums", "vocals", "guitar_rhythm", "guitar_lead", "guitar", "bass", "piano_rh", "piano_lh", "other"]
 
 
 # ---------------------------------------------------------------- segments
@@ -90,13 +92,14 @@ def build_segments(grid: Grid, notes: list[dict], percussion: bool, splits: set 
     spans = []  # (start_pos, end_pos, pitch)
     for n in notes:
         k, j = quantize(grid, n["start"])
-        onsets.setdefault((k, j), {})[n["pitch"]] = n.get("vel", 90)
+        pos = (n["string"], n["fret"]) if "string" in n and "fret" in n else None   # fixed fingering
+        onsets.setdefault((k, j), {})[n["pitch"]] = (n.get("vel", 90), pos)
         if not percussion:
             k2, j2 = quantize(grid, n["end"])
             sp, ep = pos_value(grid, k, j), pos_value(grid, k2, j2)
             if ep <= sp:
                 ep = sp + 1 / grid.subdiv[k]
-            spans.append((sp, ep, n["pitch"], n.get("vel", 90)))
+            spans.append((sp, ep, n["pitch"], n.get("vel", 90), pos))
     spans.sort()
 
     N = grid.beats_per_bar
@@ -110,7 +113,7 @@ def build_segments(grid: Grid, notes: list[dict], percussion: bool, splits: set 
             pos = k + j / m
             ons = onsets.get((k, j), {})
             if percussion:
-                active = {p: (False, v) for p, v in ons.items()}
+                active = {p: (False, v, None) for p, (v, _pos) in ons.items()}
             else:
                 while span_i < len(spans) and spans[span_i][0] <= pos + 1e-9:
                     live.append(spans[span_i])
@@ -119,9 +122,9 @@ def build_segments(grid: Grid, notes: list[dict], percussion: bool, splits: set 
                 active = {}
                 for s in live:
                     tie = s[2] not in ons and s[0] < pos - 1e-9
-                    active[s[2]] = (tie, s[3])
-                for p, v in ons.items():
-                    active[p] = (False, v)
+                    active[s[2]] = (tie, s[3], s[4])
+                for p, (v, ps) in ons.items():
+                    active[p] = (False, v, ps)
             slot_sets.append((ons, active))
 
         # split beat into segments
@@ -155,7 +158,7 @@ def _merge(segs: list[Seg], N: int, split_starts: set | None = None) -> list[Seg
             full_beats = prev.length.denominator == 1 and s.length == 1 and s.start.denominator == 1
             same_rest = prev.rest and s.rest
             same_tied = (not prev.rest and not s.rest and set(prev.notes) == set(s.notes)
-                         and all(t for t, _ in s.notes.values()))
+                         and all(v[0] for v in s.notes.values()))
             if full_beats and (same_rest or same_tied) and s.start not in split_starts:
                 total = prev.length + 1
                 ok_align = (total == 2 and prev.start % 2 == 0) or (total in (3, 4) and prev.start == 0)
@@ -251,7 +254,7 @@ def _limit_poly(spec: TrackSpec, segs_by_bar):
 
 
 # bump when the GP5 layout changes so existing songs get their score rebuilt
-SCORE_FORMAT = 3
+SCORE_FORMAT = 4
 
 
 def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
@@ -288,7 +291,8 @@ def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
         feet = [d for d in dn if d["pitch"] in FEET]
         voices_by_track["drums"] = [build_segments(grid, hands, True), build_segments(grid, feet, True)]
     for key in TRACK_ORDER:
-        if key == "drums" or key not in pitched or not pitched[key]:
+        # the solo track is kept even when empty, so a solo can be written in by hand
+        if key == "drums" or key not in pitched or (not pitched[key] and key != "guitar_lead"):
             continue
         spec = SPECS[key]
         segs = build_segments(grid, _fit_range(spec, pitched[key]), False, chord_splits)
@@ -349,14 +353,27 @@ def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
                         beat.status = gp.BeatStatus.normal
                         if spec.percussion:
                             used = 1
-                            for p, (tie, vel) in sorted(s.notes.items())[:6]:
+                            for p, (tie, vel, _pos) in sorted(s.notes.items())[:6]:
                                 beat.notes.append(gp.Note(beat, value=p, string=used, type=gp.NoteType.normal,
                                                           velocity=_gp_vel(vel)))
                                 used += 1
                         else:
-                            ties = {p: t for p, (t, _) in s.notes.items()}
-                            for p, string_no, fret in fingerer.assign(sorted(s.notes, reverse=True), ties):
-                                tie, vel = s.notes[p]
+                            ties = {p: t for p, (t, *_r) in s.notes.items()}
+                            fixed = [s.notes[p][2] for p in s.notes]
+                            if fixed and all(fixed):   # chord shapes come with their own fingering
+                                # one note per string: a new strum beats a note still ringing
+                                order = sorted(s.notes, key=lambda p: (s.notes[p][0], -p))
+                                placed, used = [], set()
+                                for p in order:
+                                    st_no, fr = s.notes[p][2]
+                                    if st_no in used:
+                                        continue
+                                    used.add(st_no)
+                                    placed.append((p, st_no, fr))
+                            else:
+                                placed = fingerer.assign(sorted(s.notes, reverse=True), ties)
+                            for p, string_no, fret in placed:
+                                tie, vel = s.notes[p][0], s.notes[p][1]
                                 beat.notes.append(gp.Note(beat, value=fret, string=string_no,
                                                           type=gp.NoteType.tie if tie else gp.NoteType.normal,
                                                           velocity=_gp_vel(vel)))

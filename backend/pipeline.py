@@ -183,6 +183,16 @@ def run(job: Job):
                     pitched[s] = notes
                 job.log(f"{s}：{len(notes)} 粒音")
             write_json(f / "notes.json", pitched)
+            if inst.get("guitar", {}).get("present") and "guitar" in stem_wavs:
+                try:
+                    import guitar as gtr
+                    y_g, sr_g = au.load(stem_wavs["guitar"])
+                    strums = gtr.detect_strums(y_g, sr_g)
+                    write_json(f / "strums.json", strums)
+                    job.log(f"結他：{len(strums)} 下掃弦 / 撥弦")
+                except Exception as exc:  # noqa: BLE001
+                    traceback.print_exc()
+                    warnings.append(f"結他分 Chord / Solo 失敗：{exc}")
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
             warnings.append(f"執其他樂器譜失敗：{exc}")
@@ -246,7 +256,7 @@ def rebuild_score(job: Job, options: dict | None = None):
     from timing import build_grid
 
     f = job.folder
-    opts = {"meter": None, "shift": 0, "tempoFactor": 1, "triplets": True}
+    opts = {"meter": None, "shift": 0, "tempoFactor": 1, "triplets": True, "guitarSens": "mid"}
     opts.update(job.meta.get("scoreOptions") or {})
     if options:
         opts.update({k: v for k, v in options.items() if k in opts})
@@ -257,12 +267,17 @@ def rebuild_score(job: Job, options: dict | None = None):
     pitched = json.loads((f / "notes.json").read_text("utf-8")) if (f / "notes.json").exists() else {}
     hidden = set(job.meta.get("hiddenTracks") or [])
     pitched = {k: v for k, v in pitched.items() if k not in hidden}
-    chord_times = []
+    chords = []
     if (f / "chords.json").exists():
         try:
-            chord_times = [c["start"] for c in json.loads((f / "chords.json").read_text("utf-8")).get("chords", [])]
+            chords = json.loads((f / "chords.json").read_text("utf-8")).get("chords", [])
         except Exception:
             pass
+    chord_times = [c["start"] for c in chords]
+    sens_changed = bool(options and options.get("guitarSens") and
+                        options["guitarSens"] != (job.meta.get("scoreOptions") or {}).get("guitarSens", "mid"))
+    pitched = guitar_parts(job, pitched, chords, raw["duration"], opts["guitarSens"], regenerate_lead=sens_changed,
+                           grid=grid)
     song, tracks = build_song(grid, job.meta.get("title", ""), job.meta.get("artist", ""),
                               drums if "drums" not in hidden else [], pitched,
                               allow_triplets=bool(opts["triplets"]), chord_times=chord_times)
@@ -271,6 +286,51 @@ def rebuild_score(job: Job, options: dict | None = None):
     from score import SCORE_FORMAT
     job.set(scoreFormat=SCORE_FORMAT, tracks=tracks, scoreOptions=opts, bpm=round(grid.bpm, 1), beatsPerBar=grid.beats_per_bar,
             scoreVersion=int(job.meta.get("scoreVersion", 0)) + 1)
+
+
+def guitar_parts(job: Job, pitched: dict, chords: list, duration: float, sens: str,
+                 regenerate_lead: bool = False, grid=None) -> dict:
+    """Replace the raw guitar transcription with a chord part and a solo part.
+    The solo part is saved in notes.json (so it can be edited); the chord part is
+    rebuilt every time from the strums + chords (both editable)."""
+    import guitar as gtr
+    f = job.folder
+    raw_g = pitched.get("guitar") or []
+    out = {k: v for k, v in pitched.items() if k not in ("guitar", "guitar_lead")}
+    if not raw_g and not pitched.get("guitar_lead"):
+        return out
+    sp = f / "strums.json"
+    if not sp.exists() and (f / "stems" / "guitar.mp3").exists():
+        try:  # songs analysed before this feature: detect strums from the saved stem once
+            import audio_utils as au
+            y, sr = au.load_any(f / "stems" / "guitar.mp3")
+            write_json(sp, gtr.detect_strums(y, sr))
+        except Exception:
+            traceback.print_exc()
+    strums = json.loads(sp.read_text("utf-8")) if sp.exists() else []
+    notes_path = f / "notes.json"
+    all_notes = json.loads(notes_path.read_text("utf-8")) if notes_path.exists() else {}
+    if "guitar_lead" not in all_notes or regenerate_lead:
+        others = [all_notes.get("vocals", []), all_notes.get("piano_rh", [])]
+        all_notes["guitar_lead"] = gtr.lead_part(raw_g, others, strums, sens, chords)
+        write_json(notes_path, all_notes)
+    lead = all_notes.get("guitar_lead", [])
+    snap = None
+    if grid is not None:
+        from timing import locate
+        div = 4 if sens == "high" else 2
+
+        def snap(t):
+            k, frac = locate(grid, t)
+            j = int(round(frac * div))
+            if j >= div:
+                k, j = k + 1, 0
+            k = min(k, grid.n_beats - 1)
+            a, b = grid.beats[k], grid.beats[k + 1]
+            return (k, j), a + (b - a) * j / div
+    out["guitar_rhythm"] = gtr.rhythm_part(strums, chords, raw_g, lead, duration, sens, snap)
+    out["guitar_lead"] = lead
+    return out
 
 
 def download_youtube(url: str, work: Path, job: Job) -> Path:

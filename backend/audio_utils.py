@@ -76,3 +76,17 @@ def rms_db_frames(y: np.ndarray, sr: int, hop: float = 0.05):
     frames = y[: n * h].reshape(n, h)
     rms = np.sqrt((frames ** 2).mean(axis=1) + 1e-12)
     return 20 * np.log10(rms + 1e-12)
+
+
+def load_any(path: Path):
+    """Load wav or mp3 (soundfile first, ffmpeg decoding as a fallback)."""
+    try:
+        return load(Path(path))
+    except Exception:
+        import tempfile
+        import shutil as _sh
+        tmp = Path(tempfile.mkdtemp(prefix="jappou_")) / "x.wav"
+        to_wav(Path(path), tmp, sr=22050, channels=1)
+        y, sr = load(tmp)
+        _sh.rmtree(tmp.parent, ignore_errors=True)
+        return y, sr

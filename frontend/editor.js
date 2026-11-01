@@ -10,6 +10,15 @@
     { note: 42, label: 'Hi-hat' }, { note: 50, label: 'Tom 1' }, { note: 47, label: 'Tom 2' },
     { note: 43, label: 'Floor' }, { note: 38, label: 'Snare' }, { note: 36, label: 'Kick' },
   ];
+  const STRUM_ROWS = [{ note: 0, label: '掃弦 / 撥弦' }];
+  // strums weaker than this are not on the chart (same thresholds as backend/guitar.py)
+  const STRUM_MIN = { low: 0.42, mid: 0.28, high: 0.16 };
+  const isGrid = () => E.target === 'drums' || E.target === 'strums';
+  const gridRows = () => (E.target === 'drums' ? DRUM_ROWS : STRUM_ROWS);
+  const gridEvents = () => (E.target === 'drums'
+    ? E.data.drums
+    : (E.data.strums || []).filter(d => d.s >= (STRUM_MIN[(S.meta?.scoreOptions || {}).guitarSens || 'mid'] ?? 0.28)).map(d => ({ time: d.time, note: 0, vel: 100 })));
+  const TARGET_LABEL = { strums: '結他 Chord（掃弦）', guitar_lead: '結他 Solo', piano: '琴', drums: '鼓', vocals: '人聲旋律', bass: 'Bass', other: '其他' };
   const DRUM_ALIAS = { 35: 36, 37: 38, 40: 38, 44: 42, 52: 49, 55: 49, 57: 49, 53: 51, 59: 51, 48: 50, 45: 47, 41: 43 };
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -66,11 +75,12 @@
 
   // ------------------------------------------------------------------ data
   async function loadData() {
-    const [drums, notes] = await Promise.all([
+    const [drums, notes, strums] = await Promise.all([
       api(`/api/jobs/${S.jobId}/file/drums.json`).catch(() => []),
       api(`/api/jobs/${S.jobId}/file/notes.json`).catch(() => ({})),
+      api(`/api/jobs/${S.jobId}/file/strums.json`).catch(() => []),
     ]);
-    E.data = { drums, notes };
+    E.data = { drums, notes, strums };
   }
   function pitchedFor(target) {
     const n = E.data.notes || {};
@@ -80,12 +90,13 @@
   function buildModel(keepSub) {
     const [t0, t1] = barRange(E.bar, 4);
     const slots = N() * E.sub;
-    if (E.target === 'drums') {
-      const evs = E.data.drums.filter(d => d.time >= t0 - 0.05 && d.time < t1 + 0.05);
+    if (isGrid()) {
+      const all = gridEvents();
+      const evs = all.filter(d => d.time >= t0 - 0.05 && d.time < t1 + 0.05);
       if (!keepSub) E.sub = guessSub(E.bar, evs.map(d => d.time));
       const [a, b] = barRange(E.bar);
       E.cells = new Map();
-      for (const d of E.data.drums) {
+      for (const d of all) {
         if (d.time < a || d.time >= b) continue;
         const s = Math.min(slots - 1, Math.max(0, toSlot(E.bar, d.time)));
         const note = DRUM_ALIAS[d.note] || d.note;
@@ -103,7 +114,7 @@
         return { pitch: n.pitch, s, len: Math.min(len, slots - s), origEnd: n.end, origLen: len, vel: n.vel || 90 };
       });
       const ps = E.notes.map(n => n.pitch);
-      const centre = ps.length ? Math.round((Math.min(...ps) + Math.max(...ps)) / 2) : ({ bass: 40, guitar: 59, piano: 60, vocals: 64, other: 64 }[E.target] || 60);
+      const centre = ps.length ? Math.round((Math.min(...ps) + Math.max(...ps)) / 2) : ({ bass: 40, guitar: 59, guitar_lead: 67, piano: 60, vocals: 64, other: 64 }[E.target] || 60);
       let lo = ps.length ? Math.min(...ps) - 3 : centre - 7, hi = ps.length ? Math.max(...ps) + 3 : centre + 7;
       while (hi - lo < 14) { lo--; hi++; }
       E.lo = Math.max(21, lo); E.hi = Math.min(108, hi);
@@ -135,19 +146,19 @@
   function render() {
     const slots = N() * E.sub;
     $('#edTitle').textContent = `第 ${E.bar + 1} 小節（共 ${nBars()}）`;
-    $('#edTarget').textContent = (JP.CHIPS.find(c => c.key === E.target) || {}).label || E.target;
+    $('#edTarget').textContent = TARGET_LABEL[E.target] || E.target;
     $('#edSub4').setAttribute('aria-pressed', E.sub === 4);
     $('#edSub3').setAttribute('aria-pressed', E.sub === 3);
-    $('#edLenBox').hidden = E.target === 'drums';
-    $('#edPitchBtns').hidden = E.target === 'drums';
+    $('#edLenBox').hidden = isGrid();
+    $('#edPitchBtns').hidden = isGrid();
     const lens = E.sub === 4 ? [[1, '16分'], [2, '8分'], [4, '4分'], [8, '2分'], [16, '全音']] : [[1, '三連'], [3, '4分'], [6, '2分'], [12, '全音']];
     if (!lens.some(([v]) => v === E.lenSlots)) E.lenSlots = E.sub === 4 ? 2 : 1;
     $('#edLen').innerHTML = lens.map(([v, l]) => `<button type="button" class="btn ghost xs toggle" data-len="${v}" aria-pressed="${v === E.lenSlots}">${l}</button>`).join('');
     const grid = $('#edGrid');
     grid.style.gridTemplateColumns = `76px repeat(${slots}, minmax(22px, 1fr))`;
     let h = headerCells(slots);
-    if (E.target === 'drums') {
-      for (const row of DRUM_ROWS) {
+    if (isGrid()) {
+      for (const row of gridRows()) {
         h += `<div class="eg-label">${row.label}</div>`;
         for (let s = 0; s < slots; s++) {
           const on = E.cells.has(`${row.note}:${s}`);
@@ -182,7 +193,7 @@
   // ------------------------------------------------------------------ actions
   async function open(bar, target) {
     if (!S.timing || !S.jobId) return;
-    E.target = target || (S.chip === 'piano' ? 'piano' : S.chip);
+    E.target = target || ({ piano: 'piano', guitar: 'strums', lead: 'guitar_lead' }[S.chip] || S.chip);
     E.bar = Math.max(0, Math.min(nBars() - 1, bar));
     if (!E.data) {
       $('#edGrid').innerHTML = '<div class="small muted">載入緊…</div>';
@@ -225,10 +236,10 @@
       if (E.dirty) {
         const [t0, t1] = barRange(E.bar);
         let events;
-        if (E.target === 'drums') {
+        if (isGrid()) {
           events = [...E.cells].map(([k, vel]) => {
             const [note, s] = k.split(':').map(Number);
-            return { time: slotTime(E.bar, s), note, vel };
+            return E.target === 'strums' ? { time: slotTime(E.bar, s) } : { time: slotTime(E.bar, s), note, vel };
           });
         } else {
           events = E.notes.map(n => ({
@@ -281,7 +292,7 @@
       const c = e.target.closest('.eg-cell');
       if (!c) return;
       const s = Number(c.dataset.slot);
-      if (E.target === 'drums') {
+      if (isGrid()) {
         const key = `${c.dataset.note}:${s}`;
         if (E.cells.has(key)) E.cells.delete(key);
         else {
@@ -299,7 +310,7 @@
         // don't run into the next note on the same pitch
         for (const n of E.notes) if (n.pitch === p && n.s > s) len = Math.min(len, n.s - s);
         E.notes.push({ pitch: p, s, len, vel: 90 });
-        if (E.target === 'bass' || E.target === 'vocals') {
+        if (E.target === 'bass' || E.target === 'vocals' || E.target === 'guitar_lead') {
           // single-line parts: starting a note cuts the previous one short
           for (const n of E.notes) if (n !== E.notes[E.notes.length - 1] && n.s < s && n.s + n.len > s) n.len = s - n.s;
         }
@@ -319,7 +330,7 @@
     $('#edUp').onclick = () => { E.hi = Math.min(108, E.hi + 6); E.lo = Math.min(E.lo + 6, E.hi - 14); render(); };
     $('#edDown').onclick = () => { E.lo = Math.max(21, E.lo - 6); E.hi = Math.max(E.hi - 6, E.lo + 14); render(); };
     $('#edClear').onclick = () => {
-      if (E.target === 'drums') E.cells = new Map(); else E.notes = [];
+      if (isGrid()) E.cells = new Map(); else E.notes = [];
       E.dirty = true; render();
     };
     $('#edCopyPrev').onclick = () => {
@@ -328,7 +339,7 @@
       E.bar = keepBar - 1; buildModel(true);
       const cells = E.cells, notes = E.notes;
       E.bar = keepBar; buildModel(true);
-      if (E.target === 'drums') E.cells = new Map(cells); else E.notes = notes.map(n => ({ ...n, origEnd: null }));
+      if (isGrid()) E.cells = new Map(cells); else E.notes = notes.map(n => ({ ...n, origEnd: null }));
       E.dirty = true; render();
     };
     $('#edListen').onclick = () => {

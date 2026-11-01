@@ -577,6 +577,7 @@ async function initScore(opts = {}) {
     S.score = score;
     try {
       JP.prepareScore(score, S.meta);
+      JP.setRhythmStaff(score, S.meta.tracks, S.stave === 'tab');
       JP.applySyncPoints(score, S.timing);
       const tracks = tracksForChip();
       applyLyricsToScore(tracks[0]);
@@ -656,6 +657,7 @@ function renderSelectedTracks() {
   if (!S.at || !S.score) return;
   const tracks = tracksForChip();
   if (!tracks.length) return;
+  JP.setRhythmStaff(S.score, S.meta.tracks, S.stave === 'tab');
   S.at.settings.display.staveProfile = staveProfileFor(S.chip);
   S.at.settings.display.scale = S.zoom;
   S.at.updateSettings();
@@ -1184,6 +1186,7 @@ $('#btnScoreSettings').onclick = () => {
   $('#optShiftVal').textContent = optShift;
   $('#optTempo').value = String(o.tempoFactor || 1);
   $('#optTriplets').checked = o.triplets !== false;
+  $('#optGuitarSens').value = o.guitarSens || 'mid';
   $('#optStave').value = S.stave;
   $('#dlgScore').showModal();
 };
@@ -1207,12 +1210,13 @@ $('#optApply').onclick = async () => {
     shift: optShift,
     tempoFactor: Number($('#optTempo').value),
     triplets: $('#optTriplets').checked,
+    guitarSens: $('#optGuitarSens').value,
   };
   const staveChanged = $('#optStave').value !== S.stave;
   S.stave = $('#optStave').value;
   prefs.set('stave', S.stave);
   const o = S.meta.scoreOptions || {};
-  const same = (o.meter || null) === body.meter && (o.shift || 0) === body.shift && (o.tempoFactor || 1) === body.tempoFactor && (o.triplets !== false) === body.triplets;
+  const same = (o.meter || null) === body.meter && (o.shift || 0) === body.shift && (o.tempoFactor || 1) === body.tempoFactor && (o.triplets !== false) === body.triplets && (o.guitarSens || 'mid') === body.guitarSens;
   $('#dlgScore').close();
   if (same) { if (staveChanged) renderSelectedTracks(); return; }
   toast('重新整緊譜…');
