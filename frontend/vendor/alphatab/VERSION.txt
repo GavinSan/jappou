@@ -1,1 +1,2 @@
 1.8.4 (bundled build, jappou patch 2)
+jp3: score annotation line hidden (arranged with the alphaTab author)

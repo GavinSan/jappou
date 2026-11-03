@@ -3,7 +3,7 @@
 // previous version can never be picked up by mistake.
 (function () {
   const ENGINE = 'vendor/alphatab/alphaTab-jp184.js';
-  const ENGINE_VERSION = '1.8.4-jp2';
+  const ENGINE_VERSION = '1.8.4-jp3';
   const CDNS = [
     'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/',
   ];
@@ -32,7 +32,7 @@
         return base;
       } catch (e) { errors.push(String(e.message || e)); }
     }
-    throw new Error('樂譜引擎（alphaTab）載入唔到：' + errors.join(' | '));
+    throw new Error('樂譜引擎載入唔到：' + errors.join(' | '));
   }
   window.alphaTabReady = start().then(base => {
     window.ALPHATAB_BASE = new URL(base, location.href).href;

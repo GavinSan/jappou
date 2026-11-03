@@ -72,7 +72,7 @@ def render_pdfs(base_url: str, job_id: str, requests: list[dict]) -> None:
             browser.close()
 
 
-# our own name on every page (alphaTab's small "rendered by alphaTab" credit stays, as its licence asks)
+# our own name on every page
 FOOTER = ('<div style="width:100%;font-size:8px;color:#888;padding:0 10mm;display:flex;justify-content:space-between;'
           'font-family:\'Noto Sans HK\',\'PingFang HK\',\'Microsoft JhengHei\',sans-serif">'
           '<span>執譜機 Jap Pou Gei</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>')
