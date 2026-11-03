@@ -5,21 +5,61 @@
 'use strict';
 (function () {
   const $ = (s, el = document) => el.querySelector(s);
-  const DRUM_ROWS = [
-    { note: 49, label: 'Crash' }, { note: 51, label: 'Ride' }, { note: 46, label: 'HH 開' },
-    { note: 42, label: 'Hi-hat' }, { note: 50, label: 'Tom 1' }, { note: 47, label: 'Tom 2' },
-    { note: 43, label: 'Floor' }, { note: 38, label: 'Snare' }, { note: 36, label: 'Kick' },
+  const DRUM_ROWS_ALL = [
+    { note: 49, label: 'Crash', key: 'CR' }, { note: 57, label: 'Crash 2', key: 'C2' }, { note: 51, label: 'Ride', key: 'RD' },
+    { note: 46, label: 'HH 開', key: 'HO' },
+    { note: 42, label: 'Hi-hat', key: 'HH' }, { note: 50, label: 'Tom 1', key: 'T1' }, { note: 47, label: 'Tom 2', key: 'T2' },
+    { note: 43, label: 'Floor', key: 'FT' }, { note: 38, label: 'Snare', key: 'SN' }, { note: 36, label: 'Kick', key: 'K' },
   ];
+  const crashMode = () => ((S.meta && S.meta.scoreOptions) || {}).crashes || 'auto';
+  const DRUM_ROWS_FN = () => DRUM_ROWS_ALL.filter(r => r.note !== 57 || crashMode() !== '1');
+  const ROW_BY_KEY = Object.fromEntries(DRUM_ROWS_ALL.map(r => [r.key, r.note]));
+  // how a hit is played: shown in the cell, written into the score
+  const ARTS = [
+    { id: '', label: '普通', mark: '' },
+    { id: 'ghost', label: 'Ghost（細聲）', mark: '( )' },
+    { id: 'accent', label: '重音 >', mark: '>' },
+    { id: 'flam', label: 'Flam（兩支棍差少少）', mark: 'fl' },
+    { id: 'drag', label: 'Drag（前面兩下細聲）', mark: 'dr' },
+  ];
+  const ART_MARK = Object.fromEntries(ARTS.map(a => [a.id, a.mark]));
+  const PAT_ART = { x: '', o: '', g: 'ghost', '>': 'accent', f: 'flam', d: 'drag' };
+
+  /* Common patterns. Each row is one bar of 4 beats: 4 characters per beat
+     (16ths) or 3 (triplets). x = hit, o = open hi-hat, g = ghost, > = accent,
+     f = flam, d = drag, - = nothing. Fills replace the last `span` beats. */
+  const PATTERNS = [
+    { group: '節奏', id: 'rock8', label: 'Rock 8 分', rows: { HH: 'x-x-x-x-x-x-x-x-', SN: '----x-------x---', K: 'x-------x-x-----' } },
+    { group: '節奏', id: 'rock16', label: 'Rock 16 分 hi-hat', rows: { HH: 'xxxxxxxxxxxxxxxx', SN: '----x-------x---', K: 'x-----x-x-------' } },
+    { group: '節奏', id: 'ballad', label: '慢歌（4 分 hi-hat）', rows: { HH: 'x---x---x---x---', SN: '----x-------x---', K: 'x-------x-------' } },
+    { group: '節奏', id: 'half', label: 'Half-time（第 3 拍 snare）', rows: { HH: 'x-x-x-x-x-x-x-x-', SN: '--------x-------', K: 'x-----x-----x---' } },
+    { group: '節奏', id: 'disco', label: 'Disco（開 hi-hat 喺 &）', rows: { HH: 'x---x---x---x---', HO: '--x---x---x---x-', SN: '----x-------x---', K: 'x---x---x---x---' } },
+    { group: '節奏', id: 'four', label: 'Four on the floor', rows: { HH: '--x---x---x---x-', SN: '----x-------x---', K: 'x---x---x---x---' } },
+    { group: '節奏', id: 'funk', label: 'Funk（有 ghost note）', rows: { HH: 'x-x-x-x-x-x-x-x-', SN: '-g--x--g-g--x--g', K: 'x-x----x--x-----' } },
+    { group: '節奏', id: 'ride', label: 'Ride 8 分', rows: { RD: 'x-x-x-x-x-x-x-x-', SN: '----x-------x---', K: 'x-------x-x-----' } },
+    { group: '節奏', id: 'shuffle', label: 'Shuffle（要 3 格）', sub: 3, rows: { HH: 'x-xx-xx-xx-x', SN: '---x-----x--', K: 'x-----x-----' } },
+    { group: '過門', id: 'sn1', label: '16 分 snare（最後一拍）', span: 1, rows: { SN: 'xxxx' } },
+    { group: '過門', id: 'sn2', label: '16 分 snare（最後兩拍）', span: 2, rows: { SN: 'xxxxxxxx' } },
+    { group: '過門', id: 'down2', label: '落 tom 16 分（最後兩拍）', span: 2, rows: { SN: 'xx------', T1: '--xx----', T2: '----xx--', FT: '------xx' } },
+    { group: '過門', id: 'down4', label: '落 tom 16 分（成小節）', span: 4, rows: { SN: 'xxxx------------', T1: '----xxxx--------', T2: '--------xxxx----', FT: '------------xxxx', K: 'x---x---x---x---' } },
+    { group: '過門', id: 'tom8', label: '8 分 tom（最後兩拍）', span: 2, rows: { SN: 'x-x-----', T1: '----x---', FT: '------x-' } },
+    { group: '過門', id: 'flam2', label: 'Flam 落 tom（最後兩拍）', span: 2, rows: { SN: 'f-------', T1: '--f-----', T2: '----f---', FT: '------f-' } },
+    { group: '過門', id: 'accent2', label: '重音 snare（最後兩拍）', span: 2, rows: { SN: '>xx>xx>x' } },
+    { group: '過門', id: 'trip2', label: '三連音落 tom（最後兩拍，要 3 格）', span: 2, sub: 3, rows: { SN: 'xxx---', T1: '---x--', FT: '----xx' } },
+    { group: '過門', id: 'trip4', label: '三連音 snare（最後一拍，要 3 格）', span: 1, sub: 3, rows: { SN: 'xxx' } },
+    { group: '加', id: 'crash1', label: '第 1 拍加 Crash + Kick', crash: true },
+  ];
+  const DRUM_ROWS = DRUM_ROWS_ALL;   // (all rows, for lookups)
   const STRUM_ROWS = [{ note: 0, label: '掃弦 / 撥弦' }];
   // strums weaker than this are not on the chart (same thresholds as backend/guitar.py)
   const STRUM_MIN = { low: 0.42, mid: 0.28, high: 0.16 };
   const isGrid = () => E.target === 'drums' || E.target === 'strums';
-  const gridRows = () => (E.target === 'drums' ? DRUM_ROWS : STRUM_ROWS);
+  const gridRows = () => (E.target === 'drums' ? DRUM_ROWS_FN() : STRUM_ROWS);
   const gridEvents = () => (E.target === 'drums'
     ? E.data.drums
     : (E.data.strums || []).filter(d => d.s >= (STRUM_MIN[(S.meta?.scoreOptions || {}).guitarSens || 'mid'] ?? 0.28)).map(d => ({ time: d.time, note: 0, vel: 100 })));
   const TARGET_LABEL = { strums: '結他 Chord（掃弦）', guitar_lead: '結他 Solo', piano: '琴', drums: '鼓', vocals: '人聲旋律', bass: 'Bass', other: '其他' };
-  const DRUM_ALIAS = { 35: 36, 37: 38, 40: 38, 44: 42, 52: 49, 55: 49, 57: 49, 53: 51, 59: 51, 48: 50, 45: 47, 41: 43 };
+  const DRUM_ALIAS = { 35: 36, 37: 38, 40: 38, 44: 42, 52: 49, 55: 49, 53: 51, 59: 51, 48: 50, 45: 47, 41: 43 };
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
   const FLAT_KEYS = ['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'];
@@ -29,7 +69,7 @@
 
   const E = {
     bar: 0, sub: 4, target: 'drums', data: null, cells: null, notes: [], chordsIn: [],
-    lenSlots: 2, lo: 48, hi: 72, dirty: false, chordDirty: false,
+    lenSlots: 2, lo: 48, hi: 72, dirty: false, chordDirty: false, art: '',
   };
 
   // ------------------------------------------------------------------ geometry
@@ -99,8 +139,10 @@
       for (const d of all) {
         if (d.time < a || d.time >= b) continue;
         const s = Math.min(slots - 1, Math.max(0, toSlot(E.bar, d.time)));
-        const note = DRUM_ALIAS[d.note] || d.note;
-        E.cells.set(`${note}:${s}`, d.vel || 100);
+        let note = DRUM_ALIAS[d.note] || d.note;
+        // crash 2: shown as crash 1 unless the kit has two (see 譜設定)
+        if (note === 57 && (crashMode() === '1' || (crashMode() === 'auto' && d.how === 'hand'))) note = 49;
+        E.cells.set(`${note}:${s}`, { vel: d.vel || 100, art: d.art || '' });
       }
     } else {
       const all = pitchedFor(E.target);
@@ -150,6 +192,10 @@
     $('#edSub4').setAttribute('aria-pressed', E.sub === 4);
     $('#edSub3').setAttribute('aria-pressed', E.sub === 3);
     $('#edLenBox').hidden = isGrid();
+    $('#edDrumTools').hidden = E.target !== 'drums';
+    if (E.target === 'drums') {
+      $('#edArts').innerHTML = ARTS.map(a => `<button type="button" class="btn ghost xs toggle" data-art="${a.id}" aria-pressed="${a.id === E.art}" title="揀咗之後撳格仔就會用呢個落法；撳返已有嘅格仔就會改佢嘅落法">${a.label}</button>`).join('');
+    }
     $('#edPitchBtns').hidden = isGrid();
     const lens = E.sub === 4 ? [[1, '16分'], [2, '8分'], [4, '4分'], [8, '2分'], [16, '全音']] : [[1, '三連'], [3, '4分'], [6, '2分'], [12, '全音']];
     if (!lens.some(([v]) => v === E.lenSlots)) E.lenSlots = E.sub === 4 ? 2 : 1;
@@ -161,8 +207,9 @@
       for (const row of gridRows()) {
         h += `<div class="eg-label">${row.label}</div>`;
         for (let s = 0; s < slots; s++) {
-          const on = E.cells.has(`${row.note}:${s}`);
-          h += `<button type="button" class="eg-cell ${s % E.sub === 0 ? 'beat' : ''} ${on ? 'on' : ''}" data-note="${row.note}" data-slot="${s}" aria-label="${row.label} ${s + 1}"></button>`;
+          const c = E.cells.get(`${row.note}:${s}`);
+          const art = c && c.art ? c.art : '';
+          h += `<button type="button" class="eg-cell ${s % E.sub === 0 ? 'beat' : ''} ${c ? 'on' : ''} ${art ? 'art-' + art : ''}" data-note="${row.note}" data-slot="${s}" aria-label="${row.label} ${s + 1}${art ? ' ' + art : ''}">${art ? `<span class="mk">${ART_MARK[art]}</span>` : ''}</button>`;
         }
       }
     } else {
@@ -237,9 +284,12 @@
         const [t0, t1] = barRange(E.bar);
         let events;
         if (isGrid()) {
-          events = [...E.cells].map(([k, vel]) => {
+          events = [...E.cells].map(([k, c]) => {
             const [note, s] = k.split(':').map(Number);
-            return E.target === 'strums' ? { time: slotTime(E.bar, s) } : { time: slotTime(E.bar, s), note, vel };
+            if (E.target === 'strums') return { time: slotTime(E.bar, s) };
+            const art = c.art || '';
+            const vel = art === 'ghost' ? Math.min(c.vel || 100, 55) : art === 'accent' ? Math.max(c.vel || 100, 115) : (c.vel || 100);
+            return { time: slotTime(E.bar, s), note, vel, ...(art ? { art } : {}) };
           });
         } else {
           events = E.notes.map(n => ({
@@ -294,9 +344,12 @@
       const s = Number(c.dataset.slot);
       if (isGrid()) {
         const key = `${c.dataset.note}:${s}`;
-        if (E.cells.has(key)) E.cells.delete(key);
+        const art = E.target === 'drums' ? E.art : '';
+        const cur = E.cells.get(key);
+        if (cur && (cur.art || '') === art) E.cells.delete(key);
+        else if (cur) cur.art = art;      // same cell, other way of playing it
         else {
-          E.cells.set(key, 100);
+          E.cells.set(key, { vel: art === 'ghost' ? 50 : 100, art });
           // only one hi-hat state per slot
           if (c.dataset.note === '42') E.cells.delete(`46:${s}`);
           if (c.dataset.note === '46') E.cells.delete(`42:${s}`);
@@ -317,6 +370,23 @@
       }
       E.dirty = true;
       render();
+    });
+    $('#edArts').addEventListener('click', e => {
+      const b = e.target.closest('[data-art]');
+      if (b) { E.art = b.dataset.art; render(); }
+    });
+    const sel = $('#edPattern');
+    let lastGroup = null, og = null;
+    for (const p of PATTERNS) {
+      if (p.group !== lastGroup) { og = document.createElement('optgroup'); og.label = p.group; sel.appendChild(og); lastGroup = p.group; }
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.label;
+      og.appendChild(o);
+    }
+    sel.addEventListener('change', () => {
+      const p = PATTERNS.find(x => x.id === sel.value);
+      sel.value = '';
+      if (p) applyPattern(p);
     });
     $('#edChords').addEventListener('input', () => { E.chordDirty = true; updateSaveState(); });
     $('#edPrev').onclick = () => goto(E.bar - 1);
@@ -339,7 +409,7 @@
       E.bar = keepBar - 1; buildModel(true);
       const cells = E.cells, notes = E.notes;
       E.bar = keepBar; buildModel(true);
-      if (isGrid()) E.cells = new Map(cells); else E.notes = notes.map(n => ({ ...n, origEnd: null }));
+      if (isGrid()) E.cells = new Map([...cells].map(([k, v]) => [k, { ...v }])); else E.notes = notes.map(n => ({ ...n, origEnd: null }));
       E.dirty = true; render();
     };
     $('#edListen').onclick = () => {
@@ -356,6 +426,52 @@
       const bar = recent ? S.lastClickBar : Math.floor(JP.timeToBeatPos(S.timing, mixer.currentTime) / N());
       open(bar);
     };
+  }
+
+  /** put a groove / fill / crash into the bar being edited */
+  function applyPattern(p) {
+    const n = N();
+    if (p.crash) {
+      E.cells.set(`49:0`, { vel: 110, art: '' });
+      E.cells.set(`36:0`, { vel: 100, art: '' });
+      for (const note of [42, 46, 51]) E.cells.delete(`${note}:0`);
+      E.dirty = true; render();
+      return;
+    }
+    if (p.sub && p.sub !== E.sub) {
+      if (!confirm(`呢個要用「${p.sub === 3 ? '3 格（三連音）' : '4 格（16 分）'}」，轉咗佢先？（呢小節未儲存嘅改動會冇咗）`)) return;
+      E.sub = p.sub; buildModel(true);
+    }
+    const sub = E.sub;
+    const per = p.sub || 4;          // characters per beat in the pattern
+    if (per !== sub) { toast('呢個節奏型要配合「' + (per === 3 ? '3 格' : '4 格') + '」'); return; }
+    const span = Math.min(p.span || n, n);
+    const firstBeat = n - span;
+    // clear what the pattern covers (fills: only their beats)
+    for (const k of [...E.cells.keys()]) {
+      const s = Number(k.split(':')[1]);
+      if (Math.floor(s / sub) >= firstBeat) E.cells.delete(k);
+    }
+    for (const [rowKey, str] of Object.entries(p.rows)) {
+      const note = ROW_BY_KEY[rowKey];
+      const beatsInPat = str.length / per;
+      for (let b = firstBeat; b < n; b++) {
+        // grooves repeat beat by beat for other meters; fills are laid out from their first beat
+        const pb = p.span ? b - firstBeat : b % beatsInPat;
+        for (let j = 0; j < per; j++) {
+          const ch = str[pb * per + j];
+          if (!ch || ch === '-') continue;
+          const s = b * sub + j;
+          const theNote = ch === 'o' ? 46 : note;
+          E.cells.set(`${theNote}:${s}`, { vel: ch === 'g' ? 50 : ch === '>' ? 118 : 100, art: PAT_ART[ch] || '' });
+          if (theNote === 42) E.cells.delete(`46:${s}`);
+          if (theNote === 46) E.cells.delete(`42:${s}`);
+        }
+      }
+    }
+    E.dirty = true;
+    render();
+    toast(`已放入「${p.label}」— 撳「聽呢小節」之前記得儲存`);
   }
 
   window.JPEditor = { open, wire, updateUndo };

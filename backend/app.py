@@ -201,6 +201,21 @@ class ScoreOptions(BaseModel):
     shift: int = 0
     tempoFactor: float = 1
     triplets: bool = True
+    crashes: str = "auto"      # auto | 1 | 2
+
+
+@app.post("/api/jobs/{job_id}/redrums")
+def redrums(job_id: str):
+    job = _job(job_id)
+    if job.meta.get("status") != "done":
+        raise HTTPException(409, "未分析完")
+    with _lock:
+        try:
+            n = pipeline.redo_drums(job)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc))
+    _maybe_reexport(job)
+    return {**job.meta, "drumHits": n}
 
 
 @app.post("/api/jobs/{job_id}/rescore")

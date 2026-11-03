@@ -161,6 +161,7 @@ def run(job: Job):
             from drums import transcribe_drums
             drums = on_device(lambda d: transcribe_drums(stem_wavs["drums"], d), dev, job, "執鼓譜")
             write_json(f / "drums.json", drums)
+            job.set(drumsVersion=DRUMS_VERSION)
             job.log(f"鼓：{len(drums)} 下")
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
@@ -256,7 +257,7 @@ def rebuild_score(job: Job, options: dict | None = None):
     from timing import build_grid
 
     f = job.folder
-    opts = {"meter": None, "shift": 0, "tempoFactor": 1, "triplets": True, "guitarSens": "mid"}
+    opts = {"meter": None, "shift": 0, "tempoFactor": 1, "triplets": True, "guitarSens": "mid", "crashes": "auto"}
     opts.update(job.meta.get("scoreOptions") or {})
     if options:
         opts.update({k: v for k, v in options.items() if k in opts})
@@ -264,6 +265,7 @@ def rebuild_score(job: Job, options: dict | None = None):
     grid = build_grid(raw["beats"], raw["downbeats"], raw["duration"], meter=opts["meter"],
                       shift=int(opts["shift"] or 0), tempo_factor=float(opts["tempoFactor"] or 1))
     drums = json.loads((f / "drums.json").read_text("utf-8")) if (f / "drums.json").exists() else []
+    drums = kit_crashes(drums, opts.get("crashes", "auto"))
     pitched = json.loads((f / "notes.json").read_text("utf-8")) if (f / "notes.json").exists() else {}
     hidden = set(job.meta.get("hiddenTracks") or [])
     pitched = {k: v for k, v in pitched.items() if k not in hidden}
@@ -286,6 +288,48 @@ def rebuild_score(job: Job, options: dict | None = None):
     from score import SCORE_FORMAT
     job.set(scoreFormat=SCORE_FORMAT, tracks=tracks, scoreOptions=opts, bpm=round(grid.bpm, 1), beatsPerBar=grid.beats_per_bar,
             scoreVersion=int(job.meta.get("scoreVersion", 0)) + 1)
+
+
+def redo_drums(job: Job):
+    """Transcribe the drums again from the saved drum track (newer detection),
+    keeping an undo step. Hand edits to the drums are replaced."""
+    import tempfile
+    import shutil as _sh
+    import audio_utils as au
+    from drums import transcribe_drums
+    import editing
+    src = job.folder / "stems" / "drums.mp3"
+    if not src.exists():
+        raise FileNotFoundError("搵唔到鼓嘅音軌")
+    tmp = Path(tempfile.mkdtemp(prefix="jappou_drums_"))
+    try:
+        wav = tmp / "drums.wav"
+        au.to_wav(src, wav, sr=44100, channels=2)
+        drums = on_device(lambda d: transcribe_drums(wav, d), device_name(), job, "執鼓譜")
+    finally:
+        _sh.rmtree(tmp, ignore_errors=True)
+    editing.snapshot(job, "redrums")
+    write_json(job.folder / "drums.json", drums)
+    job.set(editCount=int(job.meta.get("editCount", 0)) + 1, drumsVersion=DRUMS_VERSION)
+    rebuild_score(job)
+    return len(drums)
+
+
+DRUMS_VERSION = 2
+
+
+def kit_crashes(drums: list, mode: str) -> list:
+    """'1': one crash on the chart. '2': two crashes (left / right), including the
+    ones guessed from the hand movement. 'auto': two only where the mix itself
+    tells them apart."""
+    if mode == "2":
+        return drums
+    out = []
+    for d in drums:
+        if d.get("note") == 57 and (mode == "1" or d.get("how") == "hand"):
+            d = {**d, "note": 49}
+        out.append(d)
+    return out
 
 
 def guitar_parts(job: Job, pitched: dict, chords: list, duration: float, sens: str,

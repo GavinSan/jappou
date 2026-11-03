@@ -13,7 +13,7 @@
 <header class="topbar">
   <a class="brand" href="#/">
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="var(--accent)"/><circle cx="16" cy="16" r="7" fill="var(--bg)"/><circle cx="16" cy="16" r="2.5" fill="var(--accent)"/></svg>
-    <span>執譜機</span><span class="muted small" style="font-weight:400">v8</span>
+    <span>執譜機</span><span class="muted small" style="font-weight:400">v9</span>
   </a>
   <div class="song-head" id="songHead" hidden>
     <input id="songTitle" class="title-input" spellcheck="false" aria-label="歌名">
@@ -25,6 +25,7 @@
     <button class="btn" id="btnDrive" title="匯出 PDF + 音軌去 Google Drive 資料夾">☁ 上 Drive</button>
   </div>
   <span id="sysInfo" class="muted small sys"></span>
+  <a class="btn ghost sm" href="practice.html" title="Rudiments、過門、節奏練習">🥁 鼓基本功</a>
   <button class="btn ghost sm" id="btnSettings" title="設定">⚙ 設定</button>
 </header>
 
@@ -44,6 +45,7 @@
       </select>
       <button class="btn primary" type="submit">開始分析</button>
     </form>
+    <p class="practice-cta"><a class="btn" href="practice.html">🥁 鼓基本功練習</a> <span class="muted small">Paradiddle、flam、滾奏、過門、groove — 有譜、R/L 手順、鼓組示範同自動加速</span></p>
     <p class="muted small">或者 <label class="link">上載 MP3 / WAV<input type="file" id="fileInput" accept="audio/*,video/*" hidden></label>　·　分析一首歌大約要 2–6 分鐘</p>
   </section>
   <section>
@@ -224,6 +226,17 @@
       </select>
       <span class="small muted">改咗會重新揀 Solo 嘅音（你喺 Solo 改過嘅嘢會被覆蓋，可以還原）</span>
     </label>
+    <label class="field">鼓組有幾多塊 Crash
+      <select id="optCrashes">
+        <option value="auto">自動（聽得出左右兩塊先分）</option>
+        <option value="1">1 塊</option>
+        <option value="2">2 塊（聽唔出左右就跟手嘅方向估：落 tom 落到右邊就打右邊嗰塊）</option>
+      </select>
+    </label>
+    <label class="field">鼓譜
+      <span class="inline"><button class="btn ghost sm" type="button" id="optRedrums">🥁 用新版重新執鼓譜</button></span>
+      <span class="small muted">新版執得到密密打、細細聲嘅 crash、ghost note，分得開兩塊 crash。只會重新執鼓（約半分鐘），你喺鼓度改過嘅嘢會被覆蓋（可以還原）。</span>
+    </label>
     <hr>
     <label class="field">小節闊度
       <select id="optEvenBars">
@@ -310,6 +323,11 @@
       <span class="grow"></span>
       <button class="btn ghost xs" type="button" id="edCopyPrev">複製上一小節</button>
       <button class="btn ghost xs danger" type="button" id="edClear">清空</button>
+    </div>
+    <div class="ed-tools" id="edDrumTools">
+      <span class="small muted">落法：</span><span id="edArts"></span>
+      <span class="grow"></span>
+      <select id="edPattern" class="sm" title="將常用節奏 / 過門放入呢小節"><option value="">＋ 套用節奏 / 過門…</option></select>
     </div>
     <div class="ed-grid-wrap"><div class="ed-grid" id="edGrid"></div></div>
     <div class="ed-chords" id="edChords"></div>

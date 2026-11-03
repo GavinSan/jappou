@@ -29,14 +29,22 @@
     floor: { type: 'drum', x: 692, y: 322, rx: 94, ry: 33, h: 72, label: 'FLOOR TOM' },
     kick: { type: 'kick', x: 452, y: 330, r: 92, label: 'KICK' },
   };
+  // kit with two crashes: the second crash goes up between tom 2 and the ride,
+  // the ride moves out to the right
+  const PIECES_2CRASH = {
+    ...PIECES,
+    crash: { ...PIECES.crash, label: 'CRASH 1' },
+    crash2: { type: 'cym', x: 600, y: 92, rx: 98, ry: 52, label: 'CRASH 2', stand: [600, 432] },
+    ride: { type: 'cym', x: 792, y: 182, rx: 100, ry: 54, label: 'RIDE', stand: [792, 432] },
+  };
   const GM_TO_PIECE = {
     35: 'kick', 36: 'kick', 37: 'snare', 38: 'snare', 39: 'snare', 40: 'snare',
     42: 'hihat', 44: 'hihat', 46: 'hihat',
-    49: 'crash', 52: 'crash', 55: 'crash', 57: 'crash',
+    49: 'crash', 52: 'crash', 55: 'crash', 57: 'crash2',
     51: 'ride', 53: 'ride', 59: 'ride',
     48: 'tom1', 50: 'tom1', 45: 'tom2', 47: 'tom2', 41: 'floor', 43: 'floor',
   };
-  const DRAW_ORDER = ['kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'ride'];
+  const DRAW_ORDER = ['kick', 'tom1', 'tom2', 'floor', 'snare', 'hihat', 'crash', 'crash2', 'ride'];
   const HIT_MS = 420;   // length of the hit animation
 
   class Simulator {
@@ -62,6 +70,24 @@
       this.lastKey = '';
       this.lastChordKey = '';
       this._build(tracks || []);
+    }
+
+    /** n = 1 or 2 crashes (null: decide from the chart) */
+    setKit(n) {
+      const two = n === 2;
+      if (this.twoCrash === two) return;
+      this.twoCrash = two;
+      if (this.kind === 'drums' && this.events.length) this._build([]);
+    }
+
+    /** events made in code (rudiment practice): [{t0, t1, notes: [{piece, hand}]}] */
+    setDrumEvents(events) {
+      this.kind = 'drums';
+      this.chip = 'drums';
+      this.events = events.slice().sort((a, b) => a.t0 - b.t0);
+      this.maxDur = this.events.reduce((m, e) => Math.max(m, e.t1 - e.t0), 0.5);
+      this.lastKey = '';
+      this._build([]);
     }
 
     setChords(chords, keyName) {
@@ -92,7 +118,7 @@
                 if (kind === 'drums') {
                   const gm = n.percussionArticulation >= 0 ? n.percussionArticulation : n.realValue;
                   const piece = GM_TO_PIECE[gm];
-                  if (piece) notes.push({ piece, open: gm === 46 });
+                  if (piece) notes.push({ piece, open: gm === 46, hand: n._hand || null });
                 } else if (kind === 'fret') {
                   if (n.string >= 1) notes.push({ string: n.string, fret: n.fret, pitch: n.realValue, tie: n.isTieDestination });
                 } else {
@@ -261,6 +287,9 @@
 
     _buildDrums() {
       const W = 900, H = 440;
+      const two = this.twoCrash || this.events.some(e => e.notes.some(n => n.piece === 'crash2'));
+      const K = two ? PIECES_2CRASH : PIECES;
+      const order = DRAW_ORDER.filter(k => K[k]);
       const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'sim-svg sim-drums', role: 'img', 'aria-label': '鼓模擬器' }, this.stage);
       this.svg = svg;
       this._defs(svg);
@@ -270,30 +299,30 @@
       el('ellipse', { cx: W / 2, cy: H - 26, rx: 440, ry: 74, fill: 'url(#jpRug)' }, svg);
       const used = new Set(this.events.flatMap(e => e.notes.map(n => n.piece)));
       // floor shadows
-      for (const key of DRAW_ORDER) {
-        const p = PIECES[key];
+      for (const key of order) {
+        const p = K[key];
         const sx = p.x, sy = p.type === 'kick' ? p.y + p.r + 6 : (p.stand ? p.stand[1] : p.y + (p.h || 0) + 70);
         const srx = p.type === 'kick' ? p.r * 1.05 : (p.rx || 60) * 0.8;
         el('ellipse', { cx: sx, cy: Math.min(H - 6, sy), rx: srx, ry: 10, class: 'shadow', filter: 'url(#jpBlur6)' }, svg);
       }
       // stands, tom mounts
-      for (const key of ['crash', 'ride', 'hihat']) {
-        const p = PIECES[key];
+      for (const key of ['crash', 'crash2', 'ride', 'hihat'].filter(k => K[k])) {
+        const p = K[key];
         this._stand(svg, p.stand[0], p.y + (key === 'hihat' ? 8 : 0), p.stand[1]);
       }
-      this._chromeTube(svg, PIECES.floor.x - 70, PIECES.floor.y + 70, PIECES.floor.x - 84, H - 4, 3.5);
-      this._chromeTube(svg, PIECES.floor.x + 70, PIECES.floor.y + 70, PIECES.floor.x + 84, H - 4, 3.5);
-      this._chromeTube(svg, PIECES.snare.x, PIECES.snare.y + 40, PIECES.snare.x, H - 12, 4);
-      for (const dx of [-34, 34]) this._chromeTube(svg, PIECES.snare.x, H - 16, PIECES.snare.x + dx, H - 2, 3);
-      for (const key of DRAW_ORDER) {
-        const p = PIECES[key];
+      this._chromeTube(svg, K.floor.x - 70, K.floor.y + 70, K.floor.x - 84, H - 4, 3.5);
+      this._chromeTube(svg, K.floor.x + 70, K.floor.y + 70, K.floor.x + 84, H - 4, 3.5);
+      this._chromeTube(svg, K.snare.x, K.snare.y + 40, K.snare.x, H - 12, 4);
+      for (const dx of [-34, 34]) this._chromeTube(svg, K.snare.x, H - 16, K.snare.x + dx, H - 2, 3);
+      for (const key of order) {
+        const p = K[key];
         const g = el('g', { class: `pc ${p.type} ${used.has(key) ? '' : 'unused'}` }, svg);
         let part;
         if (p.type === 'kick') {
           part = this._kick(g, p);
           // tom mount on top of the kick
-          this._chromeTube(g, p.x, p.y - p.r - 10, PIECES.tom1.x + 30, PIECES.tom1.y + PIECES.tom1.h, 4);
-          this._chromeTube(g, p.x, p.y - p.r - 10, PIECES.tom2.x - 30, PIECES.tom2.y + PIECES.tom2.h, 4);
+          this._chromeTube(g, p.x, p.y - p.r - 10, K.tom1.x + 30, K.tom1.y + K.tom1.h, 4);
+          this._chromeTube(g, p.x, p.y - p.r - 10, K.tom2.x - 30, K.tom2.y + K.tom2.h, 4);
         } else if (p.type === 'drum') {
           part = this._drum(g, p);
         } else if (p.type === 'hh') {
@@ -307,7 +336,10 @@
         } else {
           part = this._cymbal(g, p);
         }
-        this.parts[key] = { g, p, lastHit: -1, ...part };
+        // which hand plays it (shown when the events say so, e.g. rudiment practice)
+        const hy = p.type === 'kick' ? p.y - p.r - 22 : p.y - (p.ry || 20) - (p.type === 'drum' ? 10 : 8);
+        const handMark = el('text', { x: p.x + (p.type === 'kick' ? 0 : (p.rx || 40) * 0.55), y: hy, class: 'hand-mark' }, g);
+        this.parts[key] = { g, p, lastHit: -1, handMark, ...part };
       }
     }
 
@@ -473,7 +505,8 @@
         if (dt < 0 || dt > 0.35 * rate) continue;
         for (const n of e.notes) {
           const cur = latest[n.piece];
-          if (!cur || e.t0 > cur.t0) latest[n.piece] = { t0: e.t0, open: n.open };
+          const piece = n.piece === 'crash2' && !this.parts.crash2 ? 'crash' : n.piece;
+          if (!cur || e.t0 > cur.t0) latest[piece] = { t0: e.t0, open: n.open, hand: n.hand };
         }
       }
       for (const [key, part] of Object.entries(this.parts)) {
@@ -484,7 +517,11 @@
           void part.g.getBoundingClientRect();   // restart CSS animation
           part.g.classList.add('hit');
           clearTimeout(part.timer);
-          part.timer = setTimeout(() => part.g.classList.remove('hit'), HIT_MS);
+          part.timer = setTimeout(() => { part.g.classList.remove('hit'); if (part.handMark) part.handMark.classList.remove('show'); }, HIT_MS);
+          if (part.handMark) {
+            part.handMark.textContent = hit.hand || '';
+            part.handMark.setAttribute('class', 'hand-mark ' + (hit.hand === 'L' ? 'l' : 'r') + (hit.hand ? ' show' : ''));
+          }
           if (part.top) {
             part.open = !!hit.open;
             part.top.setAttribute('transform', hit.open ? 'translate(0 -12)' : '');

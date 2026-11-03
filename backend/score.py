@@ -93,6 +93,8 @@ def build_segments(grid: Grid, notes: list[dict], percussion: bool, splits: set 
     for n in notes:
         k, j = quantize(grid, n["start"])
         pos = (n["string"], n["fret"]) if "string" in n and "fret" in n else None   # fixed fingering
+        if percussion:
+            pos = n.get("art")      # drums: ghost / accent / flam / drag
         onsets.setdefault((k, j), {})[n["pitch"]] = (n.get("vel", 90), pos)
         if not percussion:
             k2, j2 = quantize(grid, n["end"])
@@ -113,7 +115,7 @@ def build_segments(grid: Grid, notes: list[dict], percussion: bool, splits: set 
             pos = k + j / m
             ons = onsets.get((k, j), {})
             if percussion:
-                active = {p: (False, v, None) for p, (v, _pos) in ons.items()}
+                active = {p: (False, v, art) for p, (v, art) in ons.items()}   # art: ghost / accent / flam / drag
             else:
                 while span_i < len(spans) and spans[span_i][0] <= pos + 1e-9:
                     live.append(spans[span_i])
@@ -254,7 +256,7 @@ def _limit_poly(spec: TrackSpec, segs_by_bar):
 
 
 # bump when the GP5 layout changes so existing songs get their score rebuilt
-SCORE_FORMAT = 4
+SCORE_FORMAT = 5
 
 
 def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
@@ -353,9 +355,11 @@ def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
                         beat.status = gp.BeatStatus.normal
                         if spec.percussion:
                             used = 1
-                            for p, (tie, vel, _pos) in sorted(s.notes.items())[:6]:
-                                beat.notes.append(gp.Note(beat, value=p, string=used, type=gp.NoteType.normal,
-                                                          velocity=_gp_vel(vel)))
+                            for p, (tie, vel, art) in sorted(s.notes.items())[:6]:
+                                note = gp.Note(beat, value=p, string=used, type=gp.NoteType.normal,
+                                               velocity=_gp_vel(vel))
+                                _drum_art(note, art)
+                                beat.notes.append(note)
                                 used += 1
                         else:
                             ties = {p: t for p, (t, *_r) in s.notes.items()}
@@ -384,6 +388,18 @@ def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
                     tick += int(dur.time)
         track_infos.append({"key": key, "index": idx, "name": spec.name, "notes": n_notes})
     return song, track_infos
+
+
+def _drum_art(note: gp.Note, art: str | None):
+    if art == "ghost":
+        note.effect.ghostNote = True
+    elif art == "accent":
+        note.effect.accentuatedNote = True
+    elif art in ("flam", "drag"):
+        # flam = one grace note before the hit; drag = a quick double (shown as a grace hit)
+        note.effect.grace = gp.GraceEffect(fret=note.value, duration=32,
+                                           transition=gp.GraceEffectTransition.none, isOnBeat=False,
+                                           velocity=gp.Velocities.pianoPianissimo)
 
 
 def _gp_vel(v: int) -> int:

@@ -499,6 +499,10 @@ async function openSong(id) {
     S.pollTimer = setTimeout(() => { if (S.jobId === id) openSong(id); }, 1500);
     return;
   }
+  if ((meta.tracks || []).some(t => t.key === 'drums') && (meta.drumsVersion || 1) < 2 && !prefs.get('redrumHint:' + id)) {
+    prefs.set('redrumHint:' + id, 1);
+    setTimeout(() => toast('有新版鼓譜偵測（密打 / 細聲 crash、兩塊 crash、ghost note）：去「⚙ 譜設定 → 用新版重新執鼓譜」', 8000), 2500);
+  }
   $('#progressPanel').hidden = true;
   $('#workspace').hidden = false;
   $('#headActions').hidden = false;
@@ -817,6 +821,7 @@ function simUpdate(tracks) {
   if (tracks) simTracks = tracks;
   simDirty = true;
   if (!S.simOn || !simTracks || !S.timing) return;
+  sim.twoCrash = ((S.meta && S.meta.scoreOptions) || {}).crashes === '2';
   try { sim.setTracks(simTracks, S.chip, S.timing); sim.setChords(S.chords, S.key); simDirty = false; } catch (err) { console.error('simulator', err); }
   sim.render(smoothTime(), mixer.rate);
 }
@@ -1402,6 +1407,8 @@ $('#btnScoreSettings').onclick = () => {
   $('#optTempo').value = String(o.tempoFactor || 1);
   $('#optTriplets').checked = o.triplets !== false;
   $('#optGuitarSens').value = o.guitarSens || 'mid';
+  $('#optCrashes').value = o.crashes || 'auto';
+  $('#optRedrums').hidden = !(S.meta.tracks || []).some(t => t.key === 'drums');
   $('#optStave').value = S.stave;
   $('#optEvenBars').value = S.evenBars ? 'even' : 'auto';
   $('#dlgScore').showModal();
@@ -1418,6 +1425,21 @@ $('#optReanalyze').onclick = async () => {
     openSong(id);
   } catch (err) { toast(err.message); }
 };
+$('#optRedrums').onclick = async () => {
+  const btn = $('#optRedrums');
+  btn.disabled = true;
+  btn.textContent = '執緊鼓譜…（約半分鐘）';
+  try {
+    pausePlayback();
+    const res = await api(`/api/jobs/${S.jobId}/redrums`, { method: 'POST' });
+    $('#dlgScore').close();
+    await window.jpReloadScore();
+    toast(`鼓譜執好：${res.drumHits} 下 ✓（唔啱可以撳「↶ 還原」）`, 5000);
+    refreshExportSoon();
+  } catch (err) { toast('執唔到：' + err.message, 6000); }
+  btn.disabled = false;
+  btn.textContent = '🥁 用新版重新執鼓譜';
+};
 $('#optShiftL').onclick = () => { optShift--; $('#optShiftVal').textContent = optShift; };
 $('#optShiftR').onclick = () => { optShift++; $('#optShiftVal').textContent = optShift; };
 $('#optApply').onclick = async () => {
@@ -1427,6 +1449,7 @@ $('#optApply').onclick = async () => {
     tempoFactor: Number($('#optTempo').value),
     triplets: $('#optTriplets').checked,
     guitarSens: $('#optGuitarSens').value,
+    crashes: $('#optCrashes').value,
   };
   const evenNow = $('#optEvenBars').value === 'even';
   const staveChanged = $('#optStave').value !== S.stave || evenNow !== S.evenBars;
@@ -1435,7 +1458,7 @@ $('#optApply').onclick = async () => {
   S.stave = $('#optStave').value;
   prefs.set('stave', S.stave);
   const o = S.meta.scoreOptions || {};
-  const same = (o.meter || null) === body.meter && (o.shift || 0) === body.shift && (o.tempoFactor || 1) === body.tempoFactor && (o.triplets !== false) === body.triplets && (o.guitarSens || 'mid') === body.guitarSens;
+  const same = (o.meter || null) === body.meter && (o.shift || 0) === body.shift && (o.tempoFactor || 1) === body.tempoFactor && (o.triplets !== false) === body.triplets && (o.guitarSens || 'mid') === body.guitarSens && (o.crashes || 'auto') === body.crashes;
   $('#dlgScore').close();
   if (same) { if (staveChanged) renderSelectedTracks(); return; }
   toast('重新整緊譜…');

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鼓基本功練習 · 執譜機</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23f2a33a'/><circle cx='16' cy='16' r='7' fill='%23161412'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="practice-page">
+<header class="topbar">
+  <a class="brand" href="index.html#/">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="var(--accent)"/><circle cx="16" cy="16" r="7" fill="var(--bg)"/><circle cx="16" cy="16" r="2.5" fill="var(--accent)"/></svg>
+    <span>執譜機</span>
+  </a>
+  <span class="p-title">🥁 鼓基本功練習</span>
+  <span class="grow"></span>
+  <a class="btn ghost sm" href="index.html#/">← 返去我嘅歌</a>
+</header>
+
+<div class="p-layout">
+  <nav class="p-list" id="pList" aria-label="練習"></nav>
+  <main class="p-main">
+    <select id="pSelect" class="p-select" aria-label="揀練習"></select>
+    <div class="p-head">
+      <h1 id="pName"></h1>
+      <span class="badge" id="pGrid"></span>
+    </div>
+    <p class="p-tip" id="pTip"></p>
+
+    <div class="p-score-card">
+      <div id="pScore" class="p-score"></div>
+      <div id="pScoreErr" class="small" hidden></div>
+    </div>
+
+    <div class="p-transport">
+      <button class="btn primary p-play" id="pPlay" type="button">▶ 開始</button>
+      <div class="p-bpm">
+        <button class="btn ghost sm" type="button" data-bpm="-5">−5</button>
+        <button class="btn ghost sm" type="button" data-bpm="-1">−1</button>
+        <span><b id="pBpm" class="mono">80</b> <span class="muted small">BPM</span></span>
+        <button class="btn ghost sm" type="button" data-bpm="1">+1</button>
+        <button class="btn ghost sm" type="button" data-bpm="5">+5</button>
+        <input type="range" id="pBpmRange" min="30" max="260" value="80" aria-label="速度">
+      </div>
+      <span class="count-val p-count" id="pCount"></span>
+      <span class="muted small" id="pLoops"></span>
+    </div>
+
+    <div class="p-opts">
+      <label>拍子機
+        <select id="pMetro">
+          <option value="click">滴答</option>
+          <option value="beats">讀拍 one two three four</option>
+          <option value="eighths">讀 8 分 one and two and</option>
+          <option value="sixteen">讀 16 分 1 e and a</option>
+          <option value="off">冇</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="pCountIn"> 預備拍</label>
+      <label class="check"><input type="checkbox" id="pSound"> 鼓聲示範</label>
+      <label class="check" id="pSwapBox"><input type="checkbox" id="pSwap"> 左手先（R / L 對調）</label>
+      <label class="check"><input type="checkbox" id="pSimOn"> 鼓組</label>
+      <label class="check"><input type="checkbox" id="pTrainer"> 自動加速</label>
+      <span id="pTrainerOpts" class="p-trainer">
+        每 <select id="pTrEvery"><option>2</option><option>4</option><option>8</option><option>16</option></select> 次
+        加 <select id="pTrStep"><option>2</option><option>5</option><option>10</option></select> BPM，
+        最快 <input type="number" id="pTrMax" min="40" max="260" step="5" style="width:72px">
+      </span>
+    </div>
+
+    <div id="pSim" class="sim p-sim"></div>
+    <p class="muted small">R = 右手（橙色）· L = 左手（藍色）· 細楷 r / l = 另一隻手嘅裝飾音（flam / drag）· K = 大鼓　｜　快捷鍵：Space 開始 / 停，[ ] 調速度</p>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="alphatab-loader.js"></script>
+<script src="shared.js"></script>
+<script src="simulator.js"></script>
+<script src="practice-lib.js"></script>
+<script src="practice.js"></script>
+</body>
+</html>
