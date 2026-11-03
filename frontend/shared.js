@@ -121,6 +121,7 @@
     for (const tr of score.tracks) for (const st of tr.staves) for (const bar of st.bars) for (const v of bar.voices) for (const bt of v.beats) {
       if (bt._ly) { bt.text = null; bt.lyrics = null; bt._ly = false; }
     }
+    try { snapWordsToNotes(score, timing, lyrics); } catch (e) { console.warn('lyrics snap', e); }
     if (mode === 'off' || !track) return;
     const staff = track.staves[0];
     const findBeat = t => {
@@ -152,6 +153,43 @@
     }
   }
 
+
+  /** Online lyrics only have a time per line; the words were spread evenly over the
+   *  line, so under the notes they looked stretched out and missed the notes.
+   *  Put each word on the next note the singer actually sings (vocal melody track).
+   *  Only in memory, and only for lines whose word times were estimated. */
+  function snapWordsToNotes(score, timing, lyrics) {
+    const lines = (lyrics && lyrics.lines) || [];
+    if (!lines.some(l => l.approx && l.words && l.words.length)) return;
+    const vt = score.tracks.find(t => /vocal|人聲/i.test(t.name || ''));
+    if (!vt) return;
+    if (lyrics._snapFor === score) return;
+    const onsets = [];
+    for (const bar of vt.staves[0].bars) for (const v of bar.voices) for (const bt of v.beats) {
+      if (bt.isRest || bt.isEmpty || !bt.notes.length || bt.notes.every(n => n.isTieDestination)) continue;
+      onsets.push(beatPosToTime(timing, (bar.masterBar.start + bt.playbackStart) / 960));
+    }
+    onsets.sort((a, b) => a - b);
+    let k = 0;
+    lines.forEach((line, i) => {
+      if (!line.approx || !line.words || !line.words.length) return;
+      if (!line._orig) line._orig = line.words.map(w => ({ ...w }));
+      const words = line._orig;
+      const t0 = line.start - 0.25;
+      const t1 = (lines[i + 1] ? lines[i + 1].start : line.start + 12) - 0.05;
+      while (k < onsets.length && onsets[k] < t0) k++;
+      const mine = [];
+      for (let j = k; j < onsets.length && onsets[j] < t1; j++) mine.push(onsets[j]);
+      if (mine.length < Math.ceil(words.length * 0.6)) { line.words = words.map(w => ({ ...w })); return; }  // melody too sparse: keep the estimate
+      line.words = words.map((w, j) => {
+        const st = mine[Math.min(j, mine.length - 1)];
+        const en = j + 1 < words.length ? mine[Math.min(j + 1, mine.length - 1)] : Math.min(t1, st + 0.6);
+        return { ...w, start: st, end: Math.max(st + 0.05, en) };
+      });
+      line.end = line.words[line.words.length - 1].end;
+    });
+    lyrics._snapFor = score;
+  }
 
   /* ------------------------------------------------------------ chords */
   const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };

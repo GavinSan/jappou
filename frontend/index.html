@@ -45,6 +45,19 @@
       </select>
       <button class="btn primary" type="submit">開始分析</button>
     </form>
+    <details class="new-adv" id="newAdv">
+      <summary>進階：剪頭尾、自己填歌名 / 歌手</summary>
+      <div class="adv-row">
+        <label>由 <input type="text" id="trimStart" placeholder="0:00" inputmode="decimal" spellcheck="false"></label>
+        <label>到 <input type="text" id="trimEnd" placeholder="完" inputmode="decimal" spellcheck="false"></label>
+        <span class="muted small">例如 MV 頭 30 秒冇歌 → 由 0:30；尾段重複 → 到 4:05。留空 = 唔剪</span>
+      </div>
+      <div class="adv-row">
+        <label>歌名 <input type="text" id="newTrack" placeholder="例如 一杯" spellcheck="false"></label>
+        <label>歌手 <input type="text" id="newArtist" placeholder="例如 李宗盛" spellcheck="false"></label>
+        <span class="muted small">用嚟網上搵歌詞；留空就由 YouTube 標題估</span>
+      </div>
+    </details>
     <p class="practice-cta"><a class="btn" href="practice.html">🥁 鼓基本功練習</a> <span class="muted small">Paradiddle、flam、滾奏、過門、groove — 有譜、R/L 手順、鼓組示範同自動加速</span></p>
     <p class="muted small">或者 <label class="link">上載 MP3 / WAV<input type="file" id="fileInput" accept="audio/*,video/*" hidden></label>　·　分析一首歌大約要 2–6 分鐘</p>
   </section>
@@ -177,9 +190,14 @@
     <p class="muted small" id="lySource"></p>
     <details class="ly-search" id="lySearchBox">
       <summary>🔍 網上搵歌詞（LRCLIB）</summary>
+      <div class="ly-chips-box" id="lyChipsBox" hidden>
+        <div class="small muted">YouTube 標題：撳一下放入 <span class="ly-target"><button type="button" class="btn ghost xs toggle" data-target="track" aria-pressed="true">歌名</button><button type="button" class="btn ghost xs toggle" data-target="artist" aria-pressed="false">歌手</button></span>（撳完會自動轉去下一格）</div>
+        <div class="ly-chips" id="lyChips"></div>
+      </div>
       <div class="ly-search-row">
-        <input type="text" id="lyqTrack" placeholder="歌名" spellcheck="false">
-        <input type="text" id="lyqArtist" placeholder="歌手（可以留空）" spellcheck="false">
+        <label class="ly-field"><span class="small muted">歌名</span><input type="text" id="lyqTrack" placeholder="歌名" spellcheck="false"></label>
+        <button class="btn ghost xs" type="button" id="lyqSwap" title="歌名同歌手對調">⇄</button>
+        <label class="ly-field"><span class="small muted">歌手</span><input type="text" id="lyqArtist" placeholder="可以留空" spellcheck="false"></label>
         <button class="btn sm" type="button" id="lyqGo">搵</button>
       </div>
       <div class="ly-results" id="lyResults"></div>
@@ -225,6 +243,14 @@
         <option value="high">高：執多啲 solo 音同掃弦（可能多雜音）</option>
       </select>
       <span class="small muted">改咗會重新揀 Solo 嘅音（你喺 Solo 改過嘅嘢會被覆蓋，可以還原）</span>
+    </label>
+    <label class="field">剪頭尾（例如 MV 前奏、尾段重複）
+      <span class="inline trim-row">
+        由 <input type="text" id="optTrimStart" placeholder="0:00" spellcheck="false"><button class="btn ghost xs" type="button" id="optTrimStartNow" title="用而家播到嘅位置">⏱ 而家</button>
+        到 <input type="text" id="optTrimEnd" placeholder="完" spellcheck="false"><button class="btn ghost xs" type="button" id="optTrimEndNow" title="用而家播到嘅位置">⏱ 而家</button>
+        <button class="btn sm" type="button" id="optTrimGo">✂ 剪 + 重新分析</button>
+      </span>
+      <span class="small muted">時間以原本首歌計。要重新分析（幾分鐘），改過嘅譜同歌詞會冇咗。</span>
     </label>
     <label class="field">鼓組有幾多塊 Crash
       <select id="optCrashes">

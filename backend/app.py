@@ -96,14 +96,27 @@ def _job(job_id: str) -> pipeline.Job:
     return pipeline.Job(f)
 
 
-def _new_job(source: dict, language: str, lyrics: bool, title: str = "") -> dict:
+def _clean_trim(start, end) -> dict | None:
+    try:
+        a = max(0.0, float(start)) if start not in (None, "") else 0.0
+        b = float(end) if end not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(400, "剪頭尾嘅時間唔啱")
+    if b is not None and b <= a + 5:
+        raise HTTPException(400, "剪完要長過 5 秒")
+    return {"start": round(a, 2), "end": None if b is None else round(b, 2)} if (a > 0 or b is not None) else None
+
+
+def _new_job(source: dict, language: str, lyrics: bool, title: str = "", trim: dict | None = None,
+             track: str = "", artist: str = "") -> dict:
     job_id = uuid.uuid4().hex[:12]
     f = DATA / job_id
     f.mkdir(parents=True)
     job = pipeline.Job(f)
     job.meta = {"id": job_id, "created": time.time(), "status": "queued", "stage": "queued",
                 "stageLabel": "排緊隊", "progress": 0, "source": source, "language": language,
-                "lyrics": lyrics, "title": title, "artist": "",
+                "lyrics": lyrics, "title": track.strip() or title, "artist": artist.strip(),
+                "trim": trim, "userTrack": track.strip(), "userArtist": artist.strip(),
                 "whisperModel": config.load().get("whisperModel", "auto")}
     job.save()
     return job
@@ -115,6 +128,10 @@ class NewJob(BaseModel):
     url: str
     language: str = "auto"
     lyrics: bool = True
+    trimStart: float | None = None
+    trimEnd: float | None = None
+    track: str = ""
+    artist: str = ""
 
 
 YOUTUBE_RE = re.compile(r"^https?://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/", re.I)
@@ -125,16 +142,19 @@ def create_job(body: NewJob):
     url = body.url.strip()
     if not YOUTUBE_RE.match(url):
         raise HTTPException(400, "請貼一條 YouTube 連結")
-    job = _new_job({"type": "youtube", "url": url}, body.language, body.lyrics)
+    job = _new_job({"type": "youtube", "url": url}, body.language, body.lyrics,
+                   trim=_clean_trim(body.trimStart, body.trimEnd), track=body.track, artist=body.artist)
     work_q.put(job.meta["id"])
     return job.meta
 
 
 @app.post("/api/upload")
-async def upload_job(file: UploadFile = File(...), language: str = Form("auto"), lyrics: bool = Form(True)):
+async def upload_job(file: UploadFile = File(...), language: str = Form("auto"), lyrics: bool = Form(True),
+                     trimStart: str = Form(""), trimEnd: str = Form(""), track: str = Form(""), artist: str = Form("")):
     name = Path(file.filename or "audio").name
     ext = Path(name).suffix.lower() or ".mp3"
-    job = _new_job({"type": "file", "file": "upload" + ext}, language, lyrics, title=Path(name).stem)
+    job = _new_job({"type": "file", "file": "upload" + ext}, language, lyrics, title=Path(name).stem,
+                   trim=_clean_trim(trimStart, trimEnd), track=track, artist=artist)
     with open(job.folder / ("upload" + ext), "wb") as out:
         shutil.copyfileobj(file.file, out)
     work_q.put(job.meta["id"])
@@ -177,6 +197,23 @@ def retry_job(job_id: str):
     if job.meta.get("status") in ("running", "queued"):
         return job.meta
     job.set(status="queued", stage="queued", stageLabel="排緊隊", progress=0, error=None)
+    work_q.put(job_id)
+    return job.meta
+
+
+class TrimBody(BaseModel):
+    start: float | None = None
+    end: float | None = None
+
+
+@app.post("/api/jobs/{job_id}/trim")
+def trim_job(job_id: str, body: TrimBody):
+    """Cut the start / end (in the original recording's time) and analyse again."""
+    job = _job(job_id)
+    if job.meta.get("status") in ("running", "queued"):
+        raise HTTPException(409, "分析緊，等陣先")
+    job.set(trim=_clean_trim(body.start, body.end), status="queued", stage="queued", stageLabel="排緊隊",
+            progress=0, error=None)
     work_q.put(job_id)
     return job.meta
 

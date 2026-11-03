@@ -9,6 +9,8 @@ import time
 import traceback
 from pathlib import Path
 
+import numpy as np
+
 import audio_utils as au
 
 STAGES = [
@@ -116,6 +118,20 @@ def run(job: Job):
             raw = f / src["file"]
         au.to_wav(raw, mix)
         y, sr = au.load(mix)
+        trim = job.meta.get("trim") or None
+        if trim:
+            # cut the MV intro / repeated ending: everything after this works on the cut audio
+            a = int(float(trim.get("start") or 0) * sr)
+            b = int(float(trim["end"]) * sr) if trim.get("end") else len(y)
+            b = min(len(y), b)
+            if b - a > 5 * sr:
+                y = y[a:b]
+                fade = min(len(y) // 4, int(0.02 * sr))
+                if fade > 0:
+                    y[:fade] *= np.linspace(0, 1, fade)[:, None] if y.ndim == 2 else np.linspace(0, 1, fade)
+                    y[-fade:] *= np.linspace(1, 0, fade)[:, None] if y.ndim == 2 else np.linspace(1, 0, fade)
+                au.save_wav(mix, y, sr)
+                job.log(f"剪咗頭尾：{a / sr:.1f}s – {b / sr:.1f}s")
         duration = len(y) / sr
         job.set(duration=round(duration, 2))
         del y
@@ -397,8 +413,8 @@ def download_youtube(url: str, work: Path, job: Job) -> Path:
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         path = Path(ydl.prepare_filename(info))
-    title = info.get("track") or info.get("title") or ""
-    artist = info.get("artist") or info.get("uploader") or ""
+    title = job.meta.get("userTrack") or info.get("track") or info.get("title") or ""
+    artist = job.meta.get("userArtist") or info.get("artist") or info.get("uploader") or ""
     job.set(title=title, artist=artist, thumbnail=info.get("thumbnail"),
             ytTitle=info.get("title") or "", ytTrack=info.get("track") or "", ytArtist=info.get("artist") or "",
             channel=info.get("channel") or info.get("uploader") or "")

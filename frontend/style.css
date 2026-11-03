@@ -359,3 +359,20 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
   .p-main { padding: 12px; }
 }
 .practice-cta { margin: 18px 0 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.new-adv { margin-top: 12px; }
+.new-adv summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+.adv-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.adv-row label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.adv-row input { width: 140px; }
+#trimStart, #trimEnd { width: 80px; }
+.trim-row { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.trim-row input { width: 76px; }
+.ly-chips-box { margin: 8px 0 4px; }
+.ly-target { display: inline-flex; gap: 4px; margin: 0 4px; }
+.ly-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ly-chip { font: inherit; font-size: 13px; color: var(--text); background: var(--bg3); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.ly-chip.in-track { background: rgba(242,163,58,.18); border-color: var(--accent); color: var(--accent); }
+.ly-chip.in-artist { background: rgba(108,195,255,.16); border-color: #6cc3ff; color: #9bd6ff; }
+.ly-field { display: inline-flex; flex-direction: column; gap: 2px; flex: 1; }
+.ly-search-row { align-items: flex-end; }

@@ -65,9 +65,17 @@ def render_pdfs(base_url: str, job_id: str, requests: list[dict]) -> None:
                     raise RuntimeError(f"PDF（{r['chip']}）失敗：{err}")
                 page.emulate_media(media="print")
                 Path(r["out"]).parent.mkdir(parents=True, exist_ok=True)
-                page.pdf(path=str(r["out"]), format="A4", print_background=True, prefer_css_page_size=True)
+                page.pdf(path=str(r["out"]), format="A4", print_background=True, prefer_css_page_size=True,
+                         display_header_footer=True, header_template="<span></span>",
+                         footer_template=FOOTER)
         finally:
             browser.close()
+
+
+# our own name on every page (alphaTab's small "rendered by alphaTab" credit stays, as its licence asks)
+FOOTER = ('<div style="width:100%;font-size:8px;color:#888;padding:0 10mm;display:flex;justify-content:space-between;'
+          'font-family:\'Noto Sans HK\',\'PingFang HK\',\'Microsoft JhengHei\',sans-serif">'
+          '<span>執譜機 Jap Pou Gei</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>')
 
 
 def render_single_pdf(base_url: str, job_id: str, chip: str, lyrics: str, bars: int, stave: str) -> Path:

@@ -96,6 +96,9 @@ def queries_from_meta(meta: dict) -> list[dict]:
         if track and {"track": track, "artist": artist} not in out:
             out.append({"track": track, "artist": artist})
 
+    if meta.get("userTrack"):                      # what the user typed in comes first
+        add(meta["userTrack"], meta.get("userArtist") or "")
+        add(meta["userTrack"], "")
     yt_track, yt_artist = meta.get("ytTrack"), meta.get("ytArtist")
     if yt_track:
         add(yt_track, yt_artist or "")

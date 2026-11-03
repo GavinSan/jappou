@@ -450,14 +450,33 @@ $('#library').addEventListener('click', async e => {
   try { await api(`/api/jobs/${id}`, { method: 'DELETE' }); refreshLibrary(); } catch (err) { toast(err.message); }
 });
 
+/** "1:23.5" / "83" -> seconds; "" -> null; throws on nonsense */
+function parseTime(str) {
+  const v = String(str || '').trim().replace('：', ':');
+  if (!v || v === '完') return null;
+  const parts = v.split(':').map(Number);
+  if (parts.some(x => !Number.isFinite(x) || x < 0) || parts.length > 3) throw new Error(`時間「${v}」睇唔明（例子：0:30 或者 4:05）`);
+  return parts.reduce((a, x) => a * 60 + x, 0);
+}
+function newJobExtras() {
+  return {
+    trimStart: parseTime($('#trimStart').value), trimEnd: parseTime($('#trimEnd').value),
+    track: $('#newTrack').value.trim(), artist: $('#newArtist').value.trim(),
+  };
+}
+function clearNewExtras() {
+  for (const id of ['#trimStart', '#trimEnd', '#newTrack', '#newArtist']) $(id).value = '';
+  $('#newAdv').open = false;
+}
 $('#newForm').addEventListener('submit', async e => {
   e.preventDefault();
   const url = $('#urlInput').value.trim();
   const language = $('#langSelect').value;
   prefs.set('lang', language);
   try {
-    const job = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, language }) });
+    const job = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, language, ...newJobExtras() }) });
     $('#urlInput').value = '';
+    clearNewExtras();
     location.hash = `#/song/${job.id}`;
   } catch (err) { toast(err.message); }
 });
@@ -469,9 +488,17 @@ $('#fileInput').addEventListener('change', async e => {
   const fd = new FormData();
   fd.append('file', f);
   fd.append('language', $('#langSelect').value);
+  try {
+    const x = newJobExtras();
+    fd.append('trimStart', x.trimStart ?? '');
+    fd.append('trimEnd', x.trimEnd ?? '');
+    fd.append('track', x.track);
+    fd.append('artist', x.artist);
+  } catch (err) { toast(err.message); e.target.value = ''; return; }
   toast('上載緊…');
   try {
     const job = await api('/api/upload', { method: 'POST', body: fd });
+    clearNewExtras();
     location.hash = `#/song/${job.id}`;
   } catch (err) { toast(err.message); }
   e.target.value = '';
@@ -1275,6 +1302,7 @@ $('#btnEditLyrics').onclick = async () => {
       $('#lyqTrack').dataset.job = S.jobId;
     } catch { $('#lyqTrack').value = S.meta.title || ''; }
   }
+  renderChips();
 };
 $('#lyEditRows').addEventListener('click', e => {
   const act = e.target.dataset?.act;
@@ -1340,6 +1368,44 @@ async function lyricsSearch() {
       <div class="meta">${esc(r.album || '')}${r.duration ? ' · ' + fmt(r.duration) : ''}${r.preview ? ' · ' + esc(r.preview) : ''}</div></button>`).join('');
   } catch (err) { box.innerHTML = `<div class="small" style="color:var(--bad)">${esc(err.message)}</div>`; }
 }
+/* --- pick song name / singer out of a long YouTube title --- */
+const LY_NOISE = /^(official|music video|mv|m\/v|lyrics?( video)?|audio|hd|4k|hq|live|官方|官方版|完整版|高清|歌詞|歌词|動態歌詞|动态歌词|字幕|pinyin|官方mv|official mv|official video|official music video|官方高畫質|高畫質)$/i;
+const LY_SPLIT = /\s+[-–—|｜/]\s+|[|｜【】\[\]（）()「」《》『』〈〉“”"]|\s+[-–—]|[-–—]\s+|\s*(?:feat\.?|ft\.)\s*/i;
+function titleChips(title) {
+  const parts = String(title || '').split(LY_SPLIT)
+    .map(x => (x || '').trim().replace(/^[-–—:：·•]+|[-–—:：·•]+$/g, '').trim())
+    .filter(x => x && !LY_NOISE.test(x));
+  return [...new Set(parts)].slice(0, 12);
+}
+let lyTarget = 'track';
+function renderChips() {
+  const chips = titleChips(S.meta.ytTitle || S.meta.title);
+  $('#lyChipsBox').hidden = chips.length < 2;
+  const tv = $('#lyqTrack').value.trim(), av = $('#lyqArtist').value.trim();
+  $('#lyChips').innerHTML = chips.map(c =>
+    `<button type="button" class="ly-chip ${c === tv ? 'in-track' : ''} ${c === av ? 'in-artist' : ''}" data-chip="${esc(c)}">${esc(c)}</button>`).join('');
+}
+function setLyTarget(t) {
+  lyTarget = t;
+  $$('.ly-target [data-target]').forEach(x => x.setAttribute('aria-pressed', x.dataset.target === t));
+}
+$('#lyChips').addEventListener('click', e => {
+  const b = e.target.closest('.ly-chip');
+  if (!b) return;
+  const c = b.dataset.chip;
+  const el = lyTarget === 'track' ? $('#lyqTrack') : $('#lyqArtist');
+  const other = lyTarget === 'track' ? $('#lyqArtist') : $('#lyqTrack');
+  if (other.value.trim() === c) other.value = '';
+  el.value = c;
+  setLyTarget(lyTarget === 'track' ? 'artist' : 'track');   // next click fills the other box
+  renderChips();
+});
+$$('.ly-target [data-target]').forEach(x => x.addEventListener('click', () => setLyTarget(x.dataset.target)));
+$('#lyqSwap').onclick = () => {
+  const a = $('#lyqTrack').value; $('#lyqTrack').value = $('#lyqArtist').value; $('#lyqArtist').value = a;
+  renderChips();
+};
+[$('#lyqTrack'), $('#lyqArtist')].forEach(el => el.addEventListener('input', renderChips));
 $('#lyqGo').onclick = lyricsSearch;
 [$('#lyqTrack'), $('#lyqArtist')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lyricsSearch(); } }));
 $('#lyResults').addEventListener('click', async e => {
@@ -1408,6 +1474,9 @@ $('#btnScoreSettings').onclick = () => {
   $('#optTriplets').checked = o.triplets !== false;
   $('#optGuitarSens').value = o.guitarSens || 'mid';
   $('#optCrashes').value = o.crashes || 'auto';
+  const tr = S.meta.trim || {};
+  $('#optTrimStart').value = tr.start ? fmtPrecise(tr.start) : '';
+  $('#optTrimEnd').value = tr.end ? fmtPrecise(tr.end) : '';
   $('#optRedrums').hidden = !(S.meta.tracks || []).some(t => t.key === 'drums');
   $('#optStave').value = S.stave;
   $('#optEvenBars').value = S.evenBars ? 'even' : 'auto';
@@ -1439,6 +1508,24 @@ $('#optRedrums').onclick = async () => {
   } catch (err) { toast('執唔到：' + err.message, 6000); }
   btn.disabled = false;
   btn.textContent = '🥁 用新版重新執鼓譜';
+};
+// trim times are in the ORIGINAL recording; the player plays the already-cut audio
+const origNow = () => ((S.meta.trim && S.meta.trim.start) || 0) + mixer.currentTime;
+$('#optTrimStartNow').onclick = () => { $('#optTrimStart').value = fmtPrecise(origNow()); };
+$('#optTrimEndNow').onclick = () => { $('#optTrimEnd').value = fmtPrecise(origNow()); };
+$('#optTrimGo').onclick = async () => {
+  let start, end;
+  try { start = parseTime($('#optTrimStart').value); end = parseTime($('#optTrimEnd').value); } catch (err) { toast(err.message); return; }
+  const edits = Number(S.meta?.editCount || 0);
+  if (!confirm(`剪成 ${start != null ? fmt(start) : '0:00'} – ${end != null ? fmt(end) : '完'}，再由頭分析？大約要幾分鐘。${edits ? `\n⚠ 你改過嘅譜（${edits} 處）會冇咗。` : ''}`)) return;
+  $('#dlgScore').close();
+  try {
+    pausePlayback();
+    await api(`/api/jobs/${S.jobId}/trim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start, end }) });
+    const id = S.jobId;
+    closeSong();
+    openSong(id);
+  } catch (err) { toast(err.message); }
 };
 $('#optShiftL').onclick = () => { optShift--; $('#optShiftVal').textContent = optShift; };
 $('#optShiftR').onclick = () => { optShift++; $('#optShiftVal').textContent = optShift; };
