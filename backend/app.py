@@ -18,6 +18,24 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Apple Silicon: let PyTorch fall back to CPU for ops the GPU (MPS) doesn't support
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+
+def _use_certifi():
+    """Python from python.org on macOS ships without root certificates, so every
+    model download fails with CERTIFICATE_VERIFY_FAILED. Use certifi's bundle for
+    all HTTPS (urllib / torch.hub / requests / yt-dlp)."""
+    try:
+        import ssl
+        import certifi
+        ca = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", ca)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca)
+        ssl._create_default_https_context = lambda *a, **k: ssl.create_default_context(cafile=ca)  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001
+        print("[ssl] certifi not available:", exc)
+
+
+_use_certifi()
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
