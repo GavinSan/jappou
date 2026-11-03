@@ -13,7 +13,7 @@
 <header class="topbar">
   <a class="brand" href="#/">
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="var(--accent)"/><circle cx="16" cy="16" r="7" fill="var(--bg)"/><circle cx="16" cy="16" r="2.5" fill="var(--accent)"/></svg>
-    <span>執譜機</span><span class="muted small" style="font-weight:400">v7</span>
+    <span>執譜機</span><span class="muted small" style="font-weight:400">v8</span>
   </a>
   <div class="song-head" id="songHead" hidden>
     <input id="songTitle" class="title-input" spellcheck="false" aria-label="歌名">
@@ -136,6 +136,13 @@
         <div class="grp">
           <button class="btn ghost sm toggle" id="btnMetro" aria-pressed="false" title="拍子機 (M)">♩ 拍子機</button>
           <input type="range" id="metroVol" min="0" max="100" value="70" title="拍子機音量" class="short">
+          <select id="metroMode" class="mini-select" title="拍子機聲">
+            <option value="click">嘀嗒</option>
+            <option value="beats">讀拍：1 2 3 4</option>
+            <option value="eighths">讀 8 分：1 & 2 &</option>
+            <option value="sixteen">讀 16 分：1 e & a</option>
+          </select>
+          <span class="count-val mono" id="countVal" aria-live="off"></span>
           <button class="btn ghost sm toggle" id="btnCountIn" aria-pressed="false" title="播之前數一小節">預備拍</button>
           <span class="mono small" id="bpmVal"></span>
         </div>
@@ -218,6 +225,12 @@
       <span class="small muted">改咗會重新揀 Solo 嘅音（你喺 Solo 改過嘅嘢會被覆蓋，可以還原）</span>
     </label>
     <hr>
+    <label class="field">小節闊度
+      <select id="optEvenBars">
+        <option value="even">一樣闊（播放時條線行得均勻，建議）</option>
+        <option value="auto">跟音符多少自動調（密嘅小節會闊啲）</option>
+      </select>
+    </label>
     <label class="field">顯示
       <select id="optStave"><option value="auto">自動（結他 Chord：斜線譜；Solo / Bass：五線譜 + TAB）</option><option value="score">只要五線譜</option><option value="tab">只要 TAB（結他 Chord：斜線 + TAB）</option></select>
     </label>

@@ -115,6 +115,9 @@ input[type=range] { accent-color: var(--accent); }
 /* alphaTab cursor + highlight */
 .at-cursor-bar { background: rgba(242, 163, 58, .14); }
 .at-cursor-beat { background: #e8590c; width: 3px; border-radius: 2px; }
+#score.jp-own-cursor .at-cursor-beat { opacity: 0 !important; }
+.jp-playhead { position: absolute; left: 0; top: 0; width: 3px; border-radius: 2px; background: #e8590c;
+  box-shadow: 0 0 6px rgba(232, 89, 12, .55); z-index: 1001; pointer-events: none; will-change: transform; opacity: 0; }
 .at-selection div { background: rgba(242, 163, 58, .22); }
 .at-highlight * { fill: #d9480f; stroke: #d9480f; }
 
@@ -189,7 +192,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .sim { grid-column: 1; grid-row: 3; background: var(--bg2); border-bottom: 1px solid var(--line); padding: 6px 18px; display: flex; justify-content: center; }
 .sim-inner { width: 100%; max-width: 980px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .sim-svg { width: 100%; max-width: 980px; height: auto; max-height: 30vh; display: block; }
-.sim-drums { max-height: 34vh; border-radius: 10px; }
 .sim-empty { color: var(--muted); padding: 18px; font-size: 13px; }
 .sim-svg text { font-family: var(--font); }
 .sim-svg .legend { fill: var(--muted); font-size: 11px; }
@@ -217,34 +219,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .sim-keys .bk.next.rh { fill: #6b4a1f; }
 .sim-keys .bk.next.lh { fill: #2c4a63; }
 
-/* v6: realistic kit */
-.sim-drums .plank { stroke: rgba(0,0,0,.28); stroke-width: 1.2; }
-.sim-drums .stand { stroke: #8d9096; stroke-width: 3; }
-.sim-drums .shell { stroke: #6f7379; stroke-width: 1; }
-.sim-drums .lug { stroke: #6a6d72; stroke-width: .5; }
-.sim-drums .bottom-rim { fill: none; stroke: #b9bcc1; stroke-width: 3; }
-.sim-drums .head { stroke: #15110d; stroke-width: 1; }
-.sim-drums .rim { fill: none; stroke: #e6e7e9; stroke-width: 4; }
-.sim-drums .hoop { stroke: #8f949a; stroke-width: 2; }
-.sim-drums .logo-ring { fill: none; stroke: rgba(230,190,110,.55); stroke-width: 2; }
-.sim-drums .port { fill: #120e0b; stroke: #6b6f75; stroke-width: 2; }
-.sim-drums .cymbody { stroke: #6e4c14; stroke-width: 1.2; }
-.sim-drums .cymbody.lower { opacity: .9; }
-.sim-drums .groove { fill: none; stroke: rgba(90,58,10,.22); stroke-width: 1; }
-.sim-drums .bell { fill: #f5d98f; stroke: rgba(110,75,20,.5); }
-.sim-drums .nut { fill: #2d2a26; }
-.sim-drums .lbl { text-anchor: middle; font-weight: 700; letter-spacing: .12em; pointer-events: none; }
-.sim-drums .drumlbl { fill: #d6b86b; font-size: 15px; }
-.sim-drums .cymlbl { fill: #5a3d0d; font-size: 15px; }
-.sim-drums .open-mark { opacity: 0; fill: #7a2a00; }
-.sim-drums .open-mark.show { opacity: 1; }
-.sim-drums .flash { opacity: 0; transition: opacity .09s ease-out; }
-.sim-drums .pc.hit .flash { opacity: .92; transition: none; }
-.sim-drums .pc.hit .drumlbl { fill: #2a1500; }
-.sim-drums .ring { fill: none; stroke: #ffb340; stroke-width: 4; opacity: 0; }
-.sim-drums .pc.unused { opacity: .45; }
-.sim-drums .plate { transition: transform .08s; }
-.sim-drums .legend { fill: #b6aa97; font-size: 13px; }
 /* chord header */
 .sim-chords { display: flex; align-items: baseline; gap: 14px; font-size: 14px; color: var(--muted); min-height: 30px; }
 .sim-chords .lab { font-size: 12px; }
@@ -281,3 +255,57 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .eg-cell.on.start { border-radius: 3px 0 0 3px; }
 .ed-chords { display: flex; gap: 6px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .ed-chord { width: 92px; font-family: var(--mono); padding: 5px 8px; }
+
+/* v8: metronome counting */
+.mini-select { padding: 4px 6px; font-size: 12.5px; }
+.count-val { min-width: 26px; text-align: center; font-size: 17px; font-weight: 700; color: var(--muted); display: inline-block; }
+.count-val.beat { color: var(--accent); }
+.count-val.pop { animation: countpop .18s ease-out; }
+@keyframes countpop { from { transform: scale(1.45); } to { transform: scale(1); } }
+
+/* v8: drum kit */
+.sim-drums { max-height: 36vh; border-radius: 12px; overflow: hidden; background: #0b0806; }
+.sim-inner:has(.sim-drums) { max-width: none; }
+.sim-svg.sim-drums { max-width: none; }
+.sim-drums .shadow { fill: #000; opacity: .55; }
+.sim-drums .shell { stroke: #1a0306; stroke-width: 1; }
+.sim-drums .hoop-b { fill: none; stroke: #c9ccd1; stroke-width: 4; }
+.sim-drums .hoop-t { fill: none; stroke: #eef0f3; stroke-width: 5; filter: drop-shadow(0 1px 0 rgba(0,0,0,.5)); }
+.sim-drums .head { stroke: none; }
+.sim-drums .head-edge { fill: none; stroke: rgba(120,105,85,.25); stroke-width: 2; }
+.sim-drums .rod { fill: #e8eaed; stroke: #6b6f75; stroke-width: .6; }
+.sim-drums .lug { stroke: #5d6167; stroke-width: .5; }
+.sim-drums .k-hoop { stroke: #6f747a; stroke-width: 2; }
+.sim-drums .claw { stroke: #5d6167; stroke-width: .4; }
+.sim-drums .reso { stroke: #050506; stroke-width: 2; }
+.sim-drums .gloss { fill: none; stroke: rgba(255,255,255,.12); stroke-width: 10; stroke-linecap: round; }
+.sim-drums .k-ring { fill: none; stroke: rgba(214,184,107,.55); stroke-width: 1.5; }
+.sim-drums .port { fill: #000; stroke: #8a8f96; stroke-width: 2.5; }
+.sim-drums .spur { stroke: #9a9ea5; stroke-width: 4; stroke-linecap: round; }
+.sim-drums .cymbody { stroke: #6d4b12; stroke-width: 1.2; }
+.sim-drums .cymbody.lower { opacity: .92; }
+.sim-drums .groove { fill: none; stroke: rgba(80,50,8,.13); stroke-width: .9; }
+.sim-drums .sheen { fill: #fff; opacity: .16; filter: url(#jpBlur3); }
+.sim-drums .bell { stroke: rgba(110,75,20,.45); stroke-width: 1; }
+.sim-drums .bell-hi { fill: #fff; opacity: .55; }
+.sim-drums .nut { fill: #2b2a28; }
+.sim-drums .lbl { text-anchor: middle; font-weight: 700; letter-spacing: .16em; pointer-events: none; font-size: 13px; }
+.sim-drums .shell-lbl { fill: #a2957f; font-size: 11px; opacity: .85; }
+.sim-drums .cym-lbl { fill: rgba(80,52,10,.75); font-size: 12px; }
+.sim-drums .kick-lbl { fill: #d6b86b; font-size: 15px; letter-spacing: .3em; }
+.sim-drums .open-mark { fill: var(--accent); opacity: 0; font-size: 12px; }
+.sim-drums .open-mark.show { opacity: 1; }
+.sim-drums .hh-top { transition: transform .06s ease-out; }
+.sim-drums .flash { opacity: 0; pointer-events: none; }
+.sim-drums .ripple { fill: none; stroke: #fff2cf; stroke-width: 3; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.sim-drums .pc.unused { opacity: .5; }
+.sim-drums .pc.hit .flash { animation: jpFlash .42s ease-out; }
+.sim-drums .pc.hit .ripple { animation: jpRipple .42s ease-out; }
+.sim-drums .pc.hit .wob { animation: jpWobble .55s cubic-bezier(.3,.7,.4,1); }
+.sim-drums .pc.kick.hit { animation: jpThump .22s ease-out; transform-box: fill-box; transform-origin: center; }
+.sim-drums .wob { transform-box: fill-box; transform-origin: center; }
+@keyframes jpFlash { 0% { opacity: .95; } 100% { opacity: 0; } }
+@keyframes jpRipple { 0% { opacity: .9; transform: scale(.25); } 100% { opacity: 0; transform: scale(1.18); } }
+@keyframes jpWobble { 0% { transform: rotate(0) scaleY(1); } 18% { transform: rotate(-3.5deg) scaleY(.9); } 40% { transform: rotate(2.4deg) scaleY(1.05); } 65% { transform: rotate(-1.2deg); } 100% { transform: rotate(0); } }
+@keyframes jpThump { 0% { transform: scale(1.025); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .sim-drums .pc.hit .wob, .sim-drums .pc.kick.hit, .sim-drums .pc.hit .ripple { animation: none; } }

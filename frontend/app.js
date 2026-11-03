@@ -197,34 +197,95 @@ class Mixer {
 /* ======================================================================
    Metronome: clicks scheduled on the detected beat times.
    ====================================================================== */
+/* Metronome on the song's real beat times. Modes:
+     click   - beep on every beat (accent on 1)
+     beats   - spoken "one two three four"
+     eighths - spoken "one and two and ..."
+     sixteen - spoken "one e and a two e and a ..."
+   Spoken counts use short voice clips made once by the computer's own speech
+   engine (served by the backend); if that is unavailable it falls back to clicks. */
+const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven'];
+const METRO_MODES = { click: 1, beats: 1, eighths: 2, sixteen: 4 };
 class Metronome {
   constructor(mixer) {
     this.mixer = mixer;
     this.enabled = prefs.get('metro', false);
     this.vol = prefs.get('metroVol', 0.7);
+    this.mode = prefs.get('metroMode', 'click');
     this.timing = null;
-    this.next = 0;
+    this.nextBeat = 0;
+    this.nextSub = 0;
     this.timer = null;
+    this.voices = {};        // word -> AudioBuffer
+    this.voiceState = 'none'; // none | loading | ready | failed
+    this.listeners = [];
     mixer.on('play', () => this.start());
     mixer.on('pause', () => this.stop());
     mixer.on('seek', () => this.resetIndex());
   }
+  onCount(fn) { this.listeners.push(fn); }
   setTiming(t) { this.timing = t; this.resetIndex(); }
+  setMode(m) {
+    this.mode = METRO_MODES[m] ? m : 'click';
+    prefs.set('metroMode', this.mode);
+    this.resetIndex();
+    if (this.mode !== 'click') this.loadVoices();
+  }
+  async loadVoices() {
+    if (this.voiceState === 'ready' || this.voiceState === 'loading') return;
+    this.voiceState = 'loading';
+    const ctx = this.mixer.ensureCtx();
+    const words = [...COUNT_WORDS, 'and', 'e', 'a'];
+    try {
+      await Promise.all(words.map(async w => {
+        const r = await fetch(`/api/voice/${w}.wav`);
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+        this.voices[w] = await ctx.decodeAudioData(await r.arrayBuffer());
+      }));
+      this.voiceState = 'ready';
+    } catch (err) {
+      console.warn('metronome voices', err);
+      this.voiceState = 'failed';
+      toast('讀數聲整唔到（' + err.message + '），暫時用「嘀嗒」聲', 6000);
+    }
+  }
+  beatTime(i) {
+    const b = this.timing.beats;
+    if (i < b.length) return b[i].time;
+    return this.timing.endTime + (i - b.length) * 60 / this.timing.bpm;
+  }
   resetIndex() {
     if (!this.timing) return;
     const now = this.mixer.currentTime;
     const b = this.timing.beats;
+    const m = METRO_MODES[this.mode] || 1;
     let i = 0;
     while (i < b.length && b[i].time < now - 0.01) i++;
-    this.next = i;
+    // start in the previous beat: the next subdivision may still be ahead of us
+    let k = Math.max(0, i - 1), j = 0;
+    while (this.subTime(k, j, m) < now - 0.01 && k <= i) {
+      j++;
+      if (j >= m) { j = 0; k++; }
+    }
+    this.nextBeat = k;
+    this.nextSub = j;
   }
-  click(when, accent) {
+  subTime(i, j, m) {
+    const a = this.beatTime(i), b = this.beatTime(i + 1);
+    return a + (b - a) * j / m;
+  }
+  wordFor(beatInBar, j, m) {
+    if (j === 0) return COUNT_WORDS[beatInBar] || 'one';
+    if (m === 2) return 'and';
+    return ['', 'e', 'and', 'a'][j];
+  }
+  click(when, accent, soft = false) {
     const ctx = this.mixer.ensureCtx();
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = 'square';
-    o.frequency.value = accent ? 1760 : 1175;
-    const v = this.vol * (accent ? 0.5 : 0.32);
+    o.frequency.value = accent ? 1760 : soft ? 940 : 1175;
+    const v = this.vol * (accent ? 0.5 : soft ? 0.16 : 0.32);
     g.gain.setValueAtTime(0.0001, when);
     g.gain.exponentialRampToValueAtTime(Math.max(v, 0.0002), when + 0.002);
     g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
@@ -232,10 +293,30 @@ class Metronome {
     o.start(when);
     o.stop(when + 0.06);
   }
+  say(word, when, until, strong) {
+    const buf = this.voices[word];
+    if (!buf) return false;
+    const ctx = this.mixer.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    // squeeze long words a little when counts come fast (16ths at a high tempo)
+    const room = Math.max(0.05, until - when);
+    src.playbackRate.value = Math.min(1.6, Math.max(1, buf.duration / room * 0.9));
+    const g = ctx.createGain();
+    const v = this.vol * (strong ? 1.0 : 0.62);
+    g.gain.setValueAtTime(v, when);
+    const end = when + Math.min(buf.duration / src.playbackRate.value, room);
+    g.gain.setValueAtTime(v, Math.max(when, end - 0.02));
+    g.gain.linearRampToValueAtTime(0.0001, end);
+    src.connect(g).connect(ctx.destination);
+    src.start(when);
+    src.stop(end + 0.01);
+    return true;
+  }
   start() {
     this.resetIndex();
     clearInterval(this.timer);
-    this.timer = setInterval(() => this.tick(), 25);
+    this.timer = setInterval(() => this.tick(), 20);
   }
   stop() { clearInterval(this.timer); this.timer = null; }
   tick() {
@@ -243,13 +324,28 @@ class Metronome {
     const ctx = this.mixer.ctx;
     const now = this.mixer.currentTime;
     const rate = this.mixer.rate;
-    const b = this.timing.beats;
-    while (this.next < b.length && b[this.next].time < now + 0.12 * rate) {
-      const beat = b[this.next];
-      if (beat.time >= now - 0.02) {
-        this.click(ctx.currentTime + Math.max(0, (beat.time - now) / rate), beat.beat === 0);
+    const N = this.timing.beatsPerBar;
+    const m = METRO_MODES[this.mode] || 1;
+    const voice = this.mode !== 'click' && this.voiceState === 'ready';
+    if (this.mode !== 'click' && this.voiceState === 'none') this.loadVoices();
+    for (let guard = 0; guard < 64; guard++) {
+      const t = this.subTime(this.nextBeat, this.nextSub, m);
+      if (t >= now + 0.15 * rate) break;
+      if (t >= now - 0.02) {
+        const when = ctx.currentTime + Math.max(0, (t - now) / rate);
+        const tNext = this.nextSub + 1 < m ? this.subTime(this.nextBeat, this.nextSub + 1, m) : this.beatTime(this.nextBeat + 1);
+        const until = ctx.currentTime + Math.max(0, (tNext - now) / rate);
+        const bb = this.nextBeat < this.timing.beats.length ? this.timing.beats[this.nextBeat].beat : this.nextBeat % N;
+        const word = this.wordFor(bb, this.nextSub, m);
+        if (!(voice && this.say(word, when, until, this.nextSub === 0))) {
+          if (this.nextSub === 0 || this.mode !== 'click') this.click(when, bb === 0 && this.nextSub === 0, this.nextSub !== 0);
+        }
+        const label = this.nextSub === 0 ? String(bb + 1) : (m === 2 ? '&' : ['', 'e', '&', 'a'][this.nextSub]);
+        const delay = Math.max(0, (when - ctx.currentTime) * 1000);
+        setTimeout(() => this.listeners.forEach(fn => fn(label, this.nextSub === 0)), delay);
       }
-      this.next++;
+      this.nextSub++;
+      if (this.nextSub >= m) { this.nextSub = 0; this.nextBeat++; }
     }
   }
   /** count one bar in, resolves when the music should start */
@@ -257,7 +353,11 @@ class Metronome {
     const ctx = this.mixer.ensureCtx();
     const iv = 60 / bpm / this.mixer.rate;
     const t0 = ctx.currentTime + 0.08;
-    for (let i = 0; i < beatsPerBar; i++) this.click(t0 + i * iv, i === 0);
+    const voice = this.mode !== 'click' && this.voiceState === 'ready';
+    for (let i = 0; i < beatsPerBar; i++) {
+      const when = t0 + i * iv;
+      if (!(voice && this.say(COUNT_WORDS[i] || 'one', when, when + iv, true))) this.click(when, i === 0);
+    }
     return sleep((0.08 + beatsPerBar * iv) * 1000 - 15);
   }
 }
@@ -525,6 +625,17 @@ $('#trackChips').addEventListener('click', e => {
 /* ======================================================================
    alphaTab score
    ====================================================================== */
+S.evenBars = prefs.get('evenBars', true);
+/** how many equal-width bars fit on a line at the current window width / zoom */
+function barsPerRow() {
+  const w = ($('#scoreWrap')?.clientWidth || 1200) / Math.max(0.5, S.zoom);
+  return Math.max(2, Math.min(6, Math.round(w / 300)));
+}
+let lastBpr = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(window._bprT);
+  window._bprT = setTimeout(() => { if (S.evenBars && S.at && S.score && barsPerRow() !== lastBpr) { lastBpr = barsPerRow(); renderSelectedTracks(); } }, 400);
+});
 const tracksForChip = () => JP.tracksForChip(S.score, S.meta.tracks, S.chip);
 const staveProfileFor = chip => JP.staveProfileFor(chip, S.stave);
 
@@ -536,6 +647,7 @@ async function initScore(opts = {}) {
   handlerAttached = null;
   const el = $('#score');
   el.innerHTML = '';
+  playhead.map = null; el.classList.remove('jp-own-cursor');
   const base = window.ALPHATAB_BASE;
   // Web workers render off the main thread; if they can't start (CDN script, some
   // browser setups) we fall back to rendering on the page itself.
@@ -544,6 +656,7 @@ async function initScore(opts = {}) {
     core: { fontDirectory: base + 'font/', engine: 'svg', logLevel: 'warning', useWorkers },
     display: {
       scale: S.zoom, staveProfile: staveProfileFor(S.chip), layoutMode: alphaTab.LayoutMode.Page,
+      systemsLayoutMode: S.evenBars ? alphaTab.SystemsLayoutMode.UseModelLayout : alphaTab.SystemsLayoutMode.Automatic,
       resources: { secondaryGlyphColor: '#000000' }, // drum feet voice in black, not grey
     },
     notation: { elements: { effectDynamics: false } },
@@ -570,6 +683,7 @@ async function initScore(opts = {}) {
   });
   let rendered = false;
   at.renderFinished.on(() => { rendered = true; $('#scoreLoading').hidden = true; });
+  at.postRenderFinished.on(() => { if (S.at === at) buildPlayheadMap(); });
   at.playerReady.on(() => attachHandler());
   at.scoreLoaded.on(score => {
     // runs before the first render: put title, sync points, lyrics and chords in place
@@ -577,6 +691,7 @@ async function initScore(opts = {}) {
     S.score = score;
     try {
       JP.prepareScore(score, S.meta);
+      if (S.evenBars) JP.evenBars(score, barsPerRow());
       JP.setRhythmStaff(score, S.meta.tracks, S.stave === 'tab');
       JP.applySyncPoints(score, S.timing);
       const tracks = tracksForChip();
@@ -648,9 +763,9 @@ function attachHandler() {
   pushPosition();
 }
 
-function pushPosition() {
+function pushPosition(t) {
   const out = S.at?.player?.output;
-  if (out && typeof out.updatePosition === 'function') out.updatePosition(mixer.currentTime * 1000);
+  if (out && typeof out.updatePosition === 'function') out.updatePosition((t ?? mixer.currentTime) * 1000);
 }
 
 function renderSelectedTracks() {
@@ -658,6 +773,8 @@ function renderSelectedTracks() {
   const tracks = tracksForChip();
   if (!tracks.length) return;
   JP.setRhythmStaff(S.score, S.meta.tracks, S.stave === 'tab');
+  if (S.evenBars) JP.evenBars(S.score, barsPerRow());
+  S.at.settings.display.systemsLayoutMode = S.evenBars ? alphaTab.SystemsLayoutMode.UseModelLayout : alphaTab.SystemsLayoutMode.Automatic;
   S.at.settings.display.staveProfile = staveProfileFor(S.chip);
   S.at.settings.display.scale = S.zoom;
   S.at.updateSettings();
@@ -712,20 +829,107 @@ function setSimOn(on) {
 }
 $('#btnSim').onclick = () => setSimOn(!S.simOn);
 // audio clocks tick coarsely; interpolate between updates for smooth animation
-let lastRaw = -1, lastRawAt = 0;
+/* A steady playback clock. The audio element's currentTime advances in uneven
+   steps, so feeding it straight to the cursor makes it stutter. Instead we run a
+   clock from performance.now() at the playback rate and gently pull it towards
+   the audio time (hard re-sync only if they drift apart, e.g. after a seek). */
+const clock = { t0: 0, p0: 0, last: 0 };
+function resetClock() {
+  clock.t0 = mixer.currentTime; clock.p0 = performance.now(); clock.last = clock.t0;
+}
 function smoothTime() {
   const raw = mixer.currentTime;
   const now = performance.now();
-  if (!mixer.playing) { lastRaw = raw; lastRawAt = now; return raw; }
-  if (raw !== lastRaw) { lastRaw = raw; lastRawAt = now; return raw; }
-  return raw + Math.min(0.25, (now - lastRawAt) / 1000) * mixer.rate;
+  if (!mixer.playing) { clock.t0 = raw; clock.p0 = now; clock.last = raw; return raw; }
+  let t = clock.t0 + (now - clock.p0) / 1000 * mixer.rate;
+  const err = raw - t;
+  if (Math.abs(err) > 0.15) { clock.t0 = raw; clock.p0 = now; clock.last = raw; return raw; }
+  clock.t0 += err * 0.03;            // slow drift correction, no jumps
+  t += err * 0.03;
+  if (t < clock.last) t = clock.last; // never run backwards while playing
+  clock.last = t;
+  return t;
 }
-(function simLoop() {
+mixer.on('play', resetClock);
+mixer.on('seek', resetClock);
+/* Our own playhead. alphaTab's cursor jumps from note to note, and notes are
+   spaced by how much room they need, not by time, so it seemed to speed up and
+   slow down. This one is anchored at every beat of the bar (the beat positions on
+   the page) and glides at an even speed between them, driven by the steady clock. */
+const playhead = { el: null, map: null, beats: null, lastX: -1, lastY: -1 };
+function buildPlayheadMap() {
+  playhead.map = null;
+  const bl = S.at && S.at.boundsLookup;
+  if (!bl || !S.score || !S.timing || !S.timing.beats.length) { $('#score').classList.remove('jp-own-cursor'); return; }
+  const N = S.timing.beatsPerBar;
+  const map = [];
+  for (let i = 0; i < S.score.masterBars.length; i++) {
+    const mb = bl.findMasterBarByIndex(i);
+    if (!mb) { map.push(null); continue; }
+    const at = new Map();
+    for (const bar of mb.bars) for (const b of bar.beats) {
+      const tk = b.beat.playbackStart;
+      if (!at.has(tk) || b.onNotesX < at.get(tk)) at.set(tk, b.onNotesX);
+    }
+    const pts = [...at].sort((a, b) => a[0] - b[0]);
+    const barTicks = S.score.masterBars[i].calculateDuration() || N * 960;
+    const vb = mb.visualBounds;
+    pts.push([barTicks, vb.x + vb.w - 3]);
+    if (pts[0][0] > 0) pts.unshift([0, pts[0][1]]);
+    const xAt = tk => {
+      let k = 0;
+      while (k < pts.length - 2 && pts[k + 1][0] <= tk) k++;
+      const [t0, x0] = pts[k], [t1, x1] = pts[k + 1];
+      return t1 > t0 ? x0 + (x1 - x0) * Math.min(1, Math.max(0, (tk - t0) / (t1 - t0))) : x0;
+    };
+    const xs = [];
+    // half way between "exactly on the notes" and "perfectly even through the bar":
+    // stays on the notes while keeping the speed almost constant
+    const x0 = xAt(0), x1 = vb.x + vb.w - 3;
+    for (let k = 0; k <= N; k++) xs.push(0.5 * xAt(k * barTicks / N) + 0.5 * (x0 + (x1 - x0) * k / N));
+    map.push({ xs, y: vb.y, h: vb.h });
+  }
+  playhead.map = map;
+  playhead.beats = JP.steadyBeats(S.timing.beats);
+  playhead.lastX = -1;
+  $('#score').classList.add('jp-own-cursor');
+}
+function placePlayhead(t) {
+  const map = playhead.map, b = playhead.beats;
+  if (!map || !b) return;
+  if (!playhead.el || !playhead.el.isConnected) {
+    playhead.el = document.createElement('div');
+    playhead.el.className = 'jp-playhead';
+    $('#score').appendChild(playhead.el);
+    playhead.lastX = -1;
+  }
+  let lo = 0;
+  if (t > b[0].time) {
+    let hi = b.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (b[mid].time <= t) lo = mid; else hi = mid - 1; }
+  }
+  const next = lo + 1 < b.length ? b[lo + 1].time : S.timing.endTime;
+  const frac = next > b[lo].time ? Math.min(1, Math.max(0, (t - b[lo].time) / (next - b[lo].time))) : 0;
+  const row = map[b[lo].bar];
+  if (!row) { playhead.el.style.opacity = 0; return; }
+  const k = Math.min(b[lo].beat, row.xs.length - 2);
+  const x = row.xs[k] + (row.xs[k + 1] - row.xs[k]) * frac;
+  if (Math.abs(x - playhead.lastX) < 0.2 && row.y === playhead.lastY) return;
+  playhead.lastX = x; playhead.lastY = row.y;
+  playhead.el.style.opacity = 1;
+  playhead.el.style.height = row.h + 'px';
+  playhead.el.style.transform = `translate(${x - 1.5}px, ${row.y}px)`;
+}
+
+(function frame() {
+  const t = smoothTime();
+  if (mixer.playing) pushPosition(t);
+  placePlayhead(t);
   if (S.simOn && !$('#sim').hidden && !$('#workspace').hidden) {
     if (simDirty && simTracks) simUpdate();
-    sim.render(smoothTime(), mixer.rate);
+    sim.render(t, mixer.rate);
   }
-  requestAnimationFrame(simLoop);
+  requestAnimationFrame(frame);
 })();
 
 /* --- time <-> tick (alphaTab: 960 ticks per quarter, bar 0 at tick 0) --- */
@@ -779,7 +983,6 @@ mixer.on('ended', () => { if (S.at?.player) S.at.pause(); });
 let seeking = false;
 function tickPosition() {
   const t = mixer.currentTime;
-  if (mixer.playing) pushPosition();
   if (S.loopA != null && S.loopB != null && mixer.playing && t >= S.loopB) {
     seekTo(S.loopA);
     metro.resetIndex();
@@ -821,6 +1024,18 @@ setVolume(Math.round(mixer.master * 100));
 function setPressed(btn, v) { btn.setAttribute('aria-pressed', String(!!v)); }
 setPressed($('#btnMetro'), metro.enabled);
 $('#metroVol').value = Math.round(metro.vol * 100);
+$('#metroMode').value = metro.mode;
+$('#metroMode').addEventListener('change', e => {
+  metro.setMode(e.target.value);
+  if (!metro.enabled) { metro.enabled = true; prefs.set('metro', true); setPressed($('#btnMetro'), true); }
+});
+if (metro.mode !== 'click') metro.loadVoices();
+metro.onCount((label, onBeat) => {
+  const el = $('#countVal');
+  el.textContent = label;
+  el.classList.toggle('beat', onBeat);
+  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+});
 $('#btnMetro').onclick = () => { metro.enabled = !metro.enabled; prefs.set('metro', metro.enabled); setPressed($('#btnMetro'), metro.enabled); metro.resetIndex(); };
 $('#metroVol').addEventListener('input', e => { metro.vol = e.target.value / 100; prefs.set('metroVol', metro.vol); });
 setPressed($('#btnCountIn'), S.countIn);
@@ -1188,6 +1403,7 @@ $('#btnScoreSettings').onclick = () => {
   $('#optTriplets').checked = o.triplets !== false;
   $('#optGuitarSens').value = o.guitarSens || 'mid';
   $('#optStave').value = S.stave;
+  $('#optEvenBars').value = S.evenBars ? 'even' : 'auto';
   $('#dlgScore').showModal();
 };
 $('#optReanalyze').onclick = async () => {
@@ -1212,7 +1428,10 @@ $('#optApply').onclick = async () => {
     triplets: $('#optTriplets').checked,
     guitarSens: $('#optGuitarSens').value,
   };
-  const staveChanged = $('#optStave').value !== S.stave;
+  const evenNow = $('#optEvenBars').value === 'even';
+  const staveChanged = $('#optStave').value !== S.stave || evenNow !== S.evenBars;
+  S.evenBars = evenNow;
+  prefs.set('evenBars', evenNow);
   S.stave = $('#optStave').value;
   prefs.set('stave', S.stave);
   const o = S.meta.scoreOptions || {};
@@ -1241,7 +1460,10 @@ function setZoom(z) {
   S.zoom = Math.round(Math.min(2, Math.max(0.5, z)) * 10) / 10;
   prefs.set('zoom', S.zoom);
   $('#zoomVal').textContent = Math.round(S.zoom * 100) + '%';
-  if (S.at) { S.at.settings.display.scale = S.zoom; S.at.updateSettings(); S.at.render(); }
+  if (S.at) {
+    if (S.evenBars) renderSelectedTracks();   // bars per line depends on zoom
+    else { S.at.settings.display.scale = S.zoom; S.at.updateSettings(); S.at.render(); }
+  }
 }
 $('#zoomIn').onclick = () => setZoom(S.zoom + 0.1);
 $('#zoomOut').onclick = () => setZoom(S.zoom - 0.1);

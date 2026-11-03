@@ -460,6 +460,23 @@ def job_stem(job_id: str, name: str):
     return FileResponse(p, media_type="audio/mpeg")
 
 
+_voice_lock = threading.Lock()
+
+
+@app.get("/api/voice/{word}.wav")
+def voice_clip(word: str):
+    """Spoken metronome count, made once by the computer's speech engine."""
+    import voice
+    if word not in voice.WORDS:
+        raise HTTPException(404)
+    try:
+        with _voice_lock:
+            path = voice.get(word)
+    except voice.VoiceUnavailable as exc:
+        raise HTTPException(501, f"語音引擎用唔到：{exc}")
+    return FileResponse(path, media_type="audio/wav")
+
+
 @app.get("/api/system")
 def system():
     info = {"device": pipeline.device_name(), "queue": work_q.qsize(), "platform": sys.platform}

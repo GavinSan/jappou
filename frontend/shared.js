@@ -71,8 +71,33 @@
     try { score.style = undefined; } catch (e) { /* ignore */ }
   }
 
+  /** beat times with obvious detection outliers evened out, so the cursor speed
+   *  doesn't lurch on a single misplaced beat (real tempo changes are kept) */
+  function steadyBeats(beats) {
+    const t = beats.map(b => b.time);
+    for (let i = 1; i < t.length - 1; i++) {
+      const mid = (t[i - 1] + t[i + 1]) / 2;
+      const ibi = (t[i + 1] - t[i - 1]) / 2;
+      if (Math.abs(t[i] - mid) > 0.18 * ibi) t[i] = mid;
+    }
+    return beats.map((b, i) => ({ ...b, time: t[i] }));
+  }
+
+  /** equal-width bars: the cursor then moves at a steady speed across the page */
+  function evenBars(score, barsPerRow) {
+    score.defaultSystemsLayout = barsPerRow;
+    score.systemsLayout = [];
+    for (const mb of score.masterBars) { mb.displayScale = 1; mb.displayWidth = -1; }
+    for (const tr of score.tracks) {
+      tr.defaultSystemsLayout = barsPerRow;
+      tr.systemsLayout = [];
+      for (const st of tr.staves) for (const bar of st.bars) { bar.displayScale = 1; bar.displayWidth = -1; }
+    }
+  }
+
   function applySyncPoints(score, timing) {
     if (!timing) return;
+    timing = { ...timing, beats: steadyBeats(timing.beats) };
     const M = alphaTab.model;
     for (const mb of score.masterBars) mb.syncPoints = undefined;
     for (const b of timing.beats) {
@@ -251,6 +276,6 @@
   }
 
   window.JP = { CHIPS, chipAvailable, tracksForChip, staveProfileFor, timeToBeatPos, beatPosToTime,
-    prepareScore, applySyncPoints, applyLyricsToScore, setRhythmStaff,
+    prepareScore, applySyncPoints, steadyBeats, applyLyricsToScore, setRhythmStaff, evenBars,
     parseChord, guitarVoicing, applyChordsToScore, NAMES_SHARP, NAMES_FLAT };
 })();
