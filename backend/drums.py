@@ -14,8 +14,13 @@ GM = {"kick": 36, "snare": 38, "hh_closed": 42, "hh_open": 46, "crash": 49, "cra
       "tom_high": 50, "tom_mid": 47, "tom_floor": 43}
 
 
-def transcribe_drums(drum_wav: Path, device: str, sensitivity: float = 1.0):
-    """Returns list of {time, note, vel[, art][, how]} using GM note numbers."""
+def transcribe_drums(drum_wav: Path, device: str, sensitivity: float = 1.0, mix_wav: Path | None = None):
+    """Returns list of {time, note, vel[, art][, how]} using GM note numbers.
+
+    The model listens to the separated drum track AND to the full song (it was
+    trained on full songs): separation sometimes removes or blurs soft hits, the
+    full song sometimes hides them under other instruments, so each catches what
+    the other misses."""
     import torch
     from adtof_pytorch import (calculate_n_bins, create_frame_rnn_model, load_audio_for_model,
                                load_pytorch_weights, get_default_weights_path)
@@ -29,6 +34,15 @@ def transcribe_drums(drum_wav: Path, device: str, sensitivity: float = 1.0):
     x = load_audio_for_model(str(drum_wav)).to(device)
     with torch.no_grad():
         act = model(x).cpu().numpy()  # [1, frames, 5]
+        if mix_wav is not None and Path(mix_wav).exists():
+            try:
+                xm = load_audio_for_model(str(mix_wav)).to(device)
+                am = model(xm).cpu().numpy()
+                n = min(act.shape[1], am.shape[1])
+                act = np.maximum(act[:, :n], MIX_WEIGHT * am[:, :n])
+                del xm
+            except Exception as exc:  # noqa: BLE001
+                print("[drums] full-mix pass skipped:", exc)
     del model
     y2, sr = load(drum_wav, mono=False)
     return postprocess(act[0], y2, sr, sensitivity)
@@ -58,6 +72,7 @@ def postprocess(act: np.ndarray, y2: np.ndarray, sr: int, sensitivity: float = 1
 
 
 FPS = 100
+MIX_WEIGHT = 0.85        # the full-song pass counts a little less than the drum track
 
 
 class Envelopes:
@@ -177,6 +192,12 @@ def refine(events, y, sr, env: Envelopes | None = None):
             for e in toms:
                 e["note"] = GM["tom_mid"]
 
+    # --- snare rimshots: the ring of the rim is often heard as a high tom ----
+    # A tom "hit" at the same moment as a snare hit, with no other tom around it
+    # (so not part of a fill), is the snare played on the rim: one snare hit.
+    mark_rimshots(events)
+    events = [e for e in events if not e.get("drop")]
+
     # --- hi-hat: open if the high band keeps ringing ------------------------
     hh = [e for e in events if e["label"] == HH]
     hh_times = np.array([e["time"] for e in hh])
@@ -202,7 +223,7 @@ def refine(events, y, sr, env: Envelopes | None = None):
         en = np.array([env.onset("snare", int(round(e["time"] * FPS))) for e in sn])
         med = np.median(en)
         for e, v in zip(sn, en):
-            if med > 0 and v < 0.15 * med and e.get("s", 1) < 0.5:
+            if med > 0 and v < 0.15 * med and e.get("s", 1) < 0.5 and e.get("art") != "rim":
                 e["art"] = "ghost"
                 e["vel"] = min(e["vel"], 60)
 
@@ -217,6 +238,29 @@ def refine(events, y, sr, env: Envelopes | None = None):
                 d[k] = e[k]
         out.append(d)
     return out
+
+
+def mark_rimshots(events, together: float = 0.035, fill_window: float = 0.6):
+    snares = [e for e in events if e["label"] == SNARE]
+    toms = [e for e in events if e["label"] == TOM]
+    if not snares or not toms:
+        return
+    st = np.array([e["time"] for e in snares])
+    tt = np.array([e["time"] for e in toms])
+    for i, e in enumerate(toms):
+        k = int(np.argmin(np.abs(st - e["time"])))
+        if abs(st[k] - e["time"]) > together:
+            continue
+        # other toms close by that are NOT on a snare hit -> we are in a fill: keep the tom
+        near = np.abs(tt - e["time"]) < fill_window
+        near[i] = False
+        alone = [j for j in np.where(near)[0] if np.abs(st - tt[j]).min() > together]
+        if alone:
+            continue
+        sn = snares[k]
+        sn["art"] = "rim"
+        sn["vel"] = max(sn["vel"], e["vel"])
+        e["drop"] = True
 
 
 def _two_means(x: np.ndarray, iters: int = 30):

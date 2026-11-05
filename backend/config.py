@@ -20,6 +20,7 @@ DEFAULTS = {
     "pdfLyrics": "line",        # line | word | off
     "pdfBars": 4,
     "whisperModel": "auto",
+    "separator": "auto",        # auto (RoFormer with a GPU, else Demucs) | roformer (BS-RoFormer SW, much cleaner) | demucs (faster)
 }
 
 _lock = threading.Lock()

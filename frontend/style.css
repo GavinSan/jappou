@@ -376,3 +376,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .ly-chip.in-artist { background: rgba(108,195,255,.16); border-color: #6cc3ff; color: #9bd6ff; }
 .ly-field { display: inline-flex; flex-direction: column; gap: 2px; flex: 1; }
 .ly-search-row { align-items: flex-end; }
+.drum-sound { display: inline-flex; gap: 4px; margin-left: 6px; }
+.mix-row:has(.drum-sound) { flex-wrap: wrap; }
+#edGrid { touch-action: none; user-select: none; }
+.eg-cell.drag-src { outline: 2px dashed var(--accent); outline-offset: -2px; opacity: .55; }
+.eg-cell.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(242,163,58,.35); }
+.eg-cell.on.art-rim { background: #ffd36b; }

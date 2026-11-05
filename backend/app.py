@@ -519,10 +519,29 @@ def _upgrade_score(job: pipeline.Job):
             pipeline.rebuild_score(job)
 
 
+@app.post("/api/jobs/{job_id}/drums-std")
+def make_std_drums(job_id: str):
+    """Standard drum sound for songs analysed before it existed."""
+    job = _job(job_id)
+    if job.meta.get("status") != "done":
+        raise HTTPException(409, "未分析完")
+    import drumkit
+    if not drumkit.available():
+        raise HTTPException(501, "冇鼓聲樣本（backend/assets/drumkit）")
+    with _lock:
+        drums = json.loads((job.folder / "drums.json").read_text("utf-8")) if (job.folder / "drums.json").exists() else []
+        opts = job.meta.get("scoreOptions") or {}
+        pipeline.render_std_drums(job, pipeline.kit_crashes(drums, opts.get("crashes", "auto")),
+                                  float(job.meta.get("duration") or 0) or max([d["time"] for d in drums] + [0]) + 2)
+    if not (job.folder / "stems" / "drums_std.mp3").exists():
+        raise HTTPException(500, "整唔到標準鼓聲")
+    return job.meta
+
+
 @app.get("/api/jobs/{job_id}/stem/{name}.mp3")
 def job_stem(job_id: str, name: str):
     job = _job(job_id)
-    if name not in ("drums", "bass", "other", "vocals", "guitar", "piano"):
+    if name not in ("drums", "bass", "other", "vocals", "guitar", "piano", "drums_std"):
         raise HTTPException(404)
     p = job.folder / "stems" / f"{name}.mp3"
     if not p.exists():

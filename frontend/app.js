@@ -64,6 +64,7 @@ class Mixer {
     this.playing = false;
     this.listeners = {};
     this._syncTimer = null;
+    this.drumSound = prefs.get('drumSound', 'orig');   // 'orig' = separated drums, 'std' = chart on a sampled kit
   }
   on(ev, fn) { (this.listeners[ev] ||= []).push(fn); }
   emit(ev, ...a) { (this.listeners[ev] || []).forEach(f => f(...a)); }
@@ -126,6 +127,39 @@ class Mixer {
     this.updateGains();
     this.setRate(this.rate);
   }
+  /** add one more stem later (the standard drum sound), in step with the rest */
+  async addStem(jobId, name, version = 0) {
+    if (this.stems[name]) this.removeStem(name);
+    const r = await fetch(`/api/jobs/${jobId}/stem/${name}.mp3?v=${version}`);
+    if (!r.ok) throw new Error(`${name} ${r.status}`);
+    const url = URL.createObjectURL(await r.blob());
+    const el = new Audio();
+    el.preload = 'auto';
+    el.preservesPitch = true;
+    el.src = url;
+    const src = this.ensureCtx().createMediaElementSource(el);
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(gain).connect(this.out);
+    this.stems[name] = { el, src, gain, url, vol: 1, mute: false, solo: false, extra: true };
+    await new Promise(res => {
+      if (el.readyState >= 1) return res();
+      el.addEventListener('loadedmetadata', res, { once: true });
+      el.addEventListener('error', res, { once: true });
+    });
+    el.playbackRate = this.rate;
+    el.currentTime = this.currentTime;
+    if (this.playing) { try { await el.play(); } catch { /* ignore */ } }
+    this.updateGains();
+  }
+  removeStem(name) {
+    const s = this.stems[name];
+    if (!s) return;
+    s.el.pause(); s.el.src = '';
+    if (s.url) URL.revokeObjectURL(s.url);
+    try { s.src.disconnect(); s.gain.disconnect(); } catch { /* ignore */ }
+    delete this.stems[name];
+  }
   get els() { return Object.values(this.stems).map(s => s.el); }
   get currentTime() { return this.leader ? this.leader.currentTime : 0; }
   get duration() {
@@ -175,12 +209,20 @@ class Mixer {
     if (this.out) this.out.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
   }
   updateGains() {
-    const anySolo = Object.values(this.stems).some(s => s.solo);
-    for (const s of Object.values(this.stems)) {
+    const anySolo = Object.values(this.stems).some(s => s.solo && !s.extra);
+    const std = this.drumSound === 'std' && this.stems.drums_std;
+    for (const [name, s] of Object.entries(this.stems)) {
+      if (s.extra) continue;
       const audible = !s.mute && (!anySolo || s.solo);
-      const g = audible ? s.vol : 0;
+      let g = audible ? s.vol : 0;
+      if (name === 'drums' && std) {
+        // the drum row's volume / mute / solo now drive the standard kit instead
+        this.stems.drums_std.gain.gain.setTargetAtTime(g, this.ctx.currentTime, 0.02);
+        g = 0;
+      }
       if (this.ctx) s.gain.gain.setTargetAtTime(g, this.ctx.currentTime, 0.02);
     }
+    if (this.stems.drums_std && !std && this.ctx) this.stems.drums_std.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
   }
   dispose() {
     this.pause();
@@ -526,9 +568,9 @@ async function openSong(id) {
     S.pollTimer = setTimeout(() => { if (S.jobId === id) openSong(id); }, 1500);
     return;
   }
-  if ((meta.tracks || []).some(t => t.key === 'drums') && (meta.drumsVersion || 1) < 2 && !prefs.get('redrumHint:' + id)) {
-    prefs.set('redrumHint:' + id, 1);
-    setTimeout(() => toast('有新版鼓譜偵測（密打 / 細聲 crash、兩塊 crash、ghost note）：去「⚙ 譜設定 → 用新版重新執鼓譜」', 8000), 2500);
+  if ((meta.tracks || []).some(t => t.key === 'drums') && (meta.drumsVersion || 1) < 3 && !prefs.get('redrumHint3:' + id)) {
+    prefs.set('redrumHint3:' + id, 1);
+    setTimeout(() => toast('有新版鼓譜偵測（全曲再聽一次執返漏咗嘅鼓、打 snare 邊唔會再變 tom）：去「⚙ 譜設定 → 用新版重新執鼓譜」', 8000), 2500);
   }
   $('#progressPanel').hidden = true;
   $('#workspace').hidden = false;
@@ -606,6 +648,7 @@ async function loadWorkspace(meta) {
     buildMixer();
     attachHandler();
     pushPosition();
+    if (mixer.drumSound === 'std' && (meta.stems || []).includes('drums')) setDrumSound('std');
   }
   $('#tDur').textContent = fmt(mixer.duration);
   await scoreP;
@@ -1166,9 +1209,41 @@ function buildMixer() {
       <button class="ms m" aria-pressed="${s.mute}" title="靜音">M</button>
       <button class="ms s" aria-pressed="${s.solo}" title="獨奏">S</button>
       <input type="range" min="0" max="150" value="${Math.round(s.vol * 100)}" aria-label="${STEM_LABEL[n]} 音量">
+      ${n === 'drums' ? `<span class="drum-sound" role="group" aria-label="鼓聲">
+        <button type="button" class="btn ghost xs toggle" data-ds="orig" aria-pressed="${mixer.drumSound !== 'std'}" title="分離出嚟嘅原本鼓聲">原聲</button>
+        <button type="button" class="btn ghost xs toggle" data-ds="std" aria-pressed="${mixer.drumSound === 'std'}" title="將鼓譜用標準鼓組重新打一次：冇雜音，聽到嘅就係譜上寫嘅">標準鼓聲</button>
+      </span>` : ''}
     </div>`;
   }).join('');
   $('#mixerRows').innerHTML = rows;
+}
+
+/** switch the drums between the separated recording and the chart played on a sampled kit */
+async function setDrumSound(mode) {
+  mixer.drumSound = mode;
+  prefs.set('drumSound', mode);
+  if (mode === 'std') {
+    const v = Number(S.meta.drumsStd || 0);
+    if (!mixer.stems.drums_std || mixer.stems.drums_std.version !== v) {
+      try {
+        if (!v) {
+          toast('整緊標準鼓聲…');
+          S.meta = await api(`/api/jobs/${S.jobId}/drums-std`, { method: 'POST' });
+        }
+        await mixer.addStem(S.jobId, 'drums_std', Number(S.meta.drumsStd || 0));
+        mixer.stems.drums_std.version = Number(S.meta.drumsStd || 0);
+      } catch (err) {
+        toast('標準鼓聲整唔到：' + err.message, 5000);
+        mixer.drumSound = 'orig';
+      }
+    }
+  }
+  mixer.updateGains();
+  buildMixer();
+}
+/** after an edit the standard drums are re-rendered on the server: reload them */
+function refreshStdDrums() {
+  if (mixer.drumSound === 'std' && mixer.stems.drums_std && mixer.stems.drums_std.version !== Number(S.meta.drumsStd || 0)) setDrumSound('std');
 }
 function saveMix() {
   const o = {};
@@ -1183,6 +1258,8 @@ $('#mixerRows').addEventListener('input', e => {
   saveMix();
 });
 $('#mixerRows').addEventListener('click', e => {
+  const ds = e.target.closest('[data-ds]');
+  if (ds) { setDrumSound(ds.dataset.ds); return; }
   const row = e.target.closest('.mix-row');
   if (!row || !e.target.classList.contains('ms')) return;
   const s = mixer.stems[row.dataset.stem];
@@ -1560,6 +1637,7 @@ $('#optApply').onclick = async () => {
     buildChips();
     await initScore();
     S.scoreVersion = S.meta.scoreVersion;
+    refreshStdDrums();
     if (wasPlaying) togglePlay();
     toast('整好');
     refreshExportSoon();
@@ -1694,6 +1772,7 @@ async function openSettings() {
   $('#cfgLyrics').value = cfg.pdfLyrics || 'line';
   $('#cfgBars').value = String(cfg.pdfBars ?? 4);
   $('#cfgWhisper').value = cfg.whisperModel || 'auto';
+  $('#cfgSeparator').value = cfg.separator || 'auto';
   $('#cfgPdfWarn').textContent = cfg.pdfAvailable ? '' : '⚠ 未裝 PDF 引擎，請重新執行安裝程式';
   $('#dlgSettings').showModal();
 }
@@ -1711,6 +1790,7 @@ $('#cfgSave').onclick = async () => {
     pdfLyrics: $('#cfgLyrics').value,
     pdfBars: Number($('#cfgBars').value),
     whisperModel: $('#cfgWhisper').value,
+    separator: $('#cfgSeparator').value,
   };
   try {
     cfgCache = { ...(cfgCache || {}), ...(await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })) };
@@ -1739,6 +1819,7 @@ window.jpReloadScore = async function () {
   await initScore();
   S.scoreVersion = S.meta.scoreVersion;
   if (window.JPEditor) JPEditor.updateUndo();
+  refreshStdDrums();
 };
 setPressed($('#btnChords'), S.showChords);
 $('#btnChords').onclick = () => {

@@ -10,6 +10,7 @@ uvicorn>=0.29
 python-multipart
 yt-dlp[default]
 demucs==4.0.1
+bs-roformer-infer>=0.1.5
 lameenc
 beat-this
 einops

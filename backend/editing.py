@@ -42,7 +42,7 @@ def apply_edit(job: pipeline.Job, target: str, t0: float, t1: float, events: lis
         data = [d for d in _read(f / "drums.json", []) if not (t0 <= d["time"] < t1)]
         for e in events:
             d = {"time": round(float(e["time"]), 4), "note": int(e["note"]), "vel": int(e.get("vel", 100))}
-            if e.get("art") in ("ghost", "accent", "flam", "drag"):
+            if e.get("art") in ("ghost", "accent", "flam", "drag", "rim"):
                 d["art"] = e["art"]
             data.append(d)          # (hand-placed crash 2 has no "how": it is always shown)
         data.sort(key=lambda d: d["time"])

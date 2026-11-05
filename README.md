@@ -2,7 +2,7 @@
 
 貼一條 YouTube 連結（或者上載 MP3），佢會：
 
-- 分離人聲、鼓、Bass、結他、琴、其他（Demucs 6-stem）
+- 分離人聲、鼓、Bass、結他、琴、其他（BS-RoFormer SW，比舊版 Demucs 乾淨好多；冇顯示卡就自動用 Demucs）
 - 認出首歌有咩樂器
 - **執鼓譜**（ADTOF，分得出 kick、snare、hi-hat 開/合、tom 高/中/低、crash/ride，密密打或者細細聲嘅 crash 都執到；ghost note 會用括號標示；可以分兩塊 crash），用標準鼓譜呈現，手同腳分兩個聲部
 - **結他分兩份**：「結他 Chord」（斜線譜 + 和弦名 + 指法圖，好似夾 band 用嘅 chord chart）同「結他 Solo」（淨係 solo 旋律，五線譜 + TAB）
@@ -11,6 +11,7 @@
 - 用 Whisper 聽寫歌詞（廣東話／普通話／English／日本語／한국어），中文自動轉繁體
 - 播放時有條線跟住譜行（勻速滑行，唔會忽快忽慢），歌詞逐字變色
 - 調速度（唔變音）、總音量、每件樂器音量（M 靜音 / S 獨奏）、「無鼓練習」
+- **標準鼓聲**：混音入面鼓嗰行揀「標準鼓聲」，會用真鼓組樣本（Virtuosity Drums，CC0）將鼓譜重新打一次 — 冇雜音，聽到嘅就係譜上寫嘅，改完譜自動更新
 - 拍子機（跟首歌真實嘅拍子，唔係死板 BPM）：可以揀「滴答聲」或者**讀拍**——「one two three four」、「one and two and…」、「1 e and a 2 e and a…」；預備拍、A-B 循環（亦可以喺譜上拖選一段）
 - **🎮 模擬器**：鼓 → 擬真鼓組（打邊件就亮邊件、鑔會震）；結他 / Bass → 指板顯示撳邊格 + 和弦指法；琴 → 琴鍵亮燈（橙色右手、藍色左手）+ 和弦音
 - **和弦**：自動認和弦（包括 maj7、m7、sus4、slash chord 例如 C/E），顯示喺譜上、模擬器同 PDF；結他 PDF 頂部有齊全首歌嘅和弦指法圖
@@ -42,7 +43,7 @@
 
 M 系列晶片（M1–M4）會用 Mac 嘅 GPU 加速分離樂器同執鼓譜，歌詞用 Apple 專用嘅 MLX Whisper，一首 4 分鐘嘅歌大約 5–10 分鐘。Intel Mac 都用得，但係會慢好多。
 
-第一首歌會額外下載 AI 模型（Demucs ~80 MB、Whisper 1.5–3 GB），之後就唔使。
+第一首歌會額外下載 AI 模型（BS-RoFormer ~700 MB 或 Demucs ~80 MB、Whisper 1.5–3 GB），之後就唔使。
 
 ## 用法
 
@@ -82,7 +83,7 @@ M 系列晶片（M1–M4）會用 Mac 嘅 GPU 加速分離樂器同執鼓譜，�
 
 ## 準確度（老實講）
 
-- **鼓**：最準。kick / snare / hi-hat 一般幾好；ghost note、花 fill、ride vs crash 有時會錯，當係一份好嘅初稿再自己修。
+- **鼓**：最準。AI 會聽兩次（分離出嚟嘅鼓 + 原曲），執返分離時整走咗嘅細聲；snare 打邊（rimshot）唔會再變成 snare + tom。kick / snare / hi-hat 一般幾好；ghost note、花 fill、ride vs crash 有時會錯，當係一份好嘅初稿再自己修。
 - **兩塊 crash**：如果首歌混音將兩塊 crash 擺喺左右兩邊，會聽聲分（以 hi-hat 嗰邊做左手邊）。聽唔出就要喺設定揀「2 塊」，佢會跟手嘅方向估：fill 落到 floor tom / tom 2 之後嘅 crash 當右邊嗰塊，連續幾下 crash 當同一塊。
 - **Bass、琴**：唔錯。
 - **結他**：Chord 部分用認到嘅和弦 + 偵測到嘅掃弦節奏寫成，所以好睇過逐粒音執；Solo 部分會自動過濾人聲 / 琴漏音、掃弦入面嘅音同零星雜音。覺得太多雜音或者漏咗 solo，可以喺「⚙ 譜設定 → 結他靈敏度」揀低 / 中 / 高。
@@ -104,7 +105,7 @@ M 系列晶片（M1–M4）會用 Mac 嘅 GPU 加速分離樂器同執鼓譜，�
 
 ## 技術
 
-`backend/`：FastAPI + yt-dlp → Demucs `htdemucs_6s` → Beat This!（拍子 + downbeat）→ ADTOF-pytorch（鼓）→ Basic Pitch（其他樂器）→ OpenAI Whisper（歌詞）→ PyGuitarPro 寫 GP5 → Playwright（headless 瀏覽器）用 `print.html` 出 PDF。
+`backend/`：FastAPI + yt-dlp → BS-RoFormer SW（`bs-roformer-infer`；後備 Demucs `htdemucs_6s`） → Beat This!（拍子 + downbeat）→ ADTOF-pytorch（鼓）→ Basic Pitch（其他樂器）→ OpenAI Whisper（歌詞）→ PyGuitarPro 寫 GP5 → Playwright（headless 瀏覽器）用 `print.html` 出 PDF。
 `frontend/`：純 HTML/JS，alphaTab 畫譜（external media 模式，用 sync point 對準真實錄音嘅每一拍），Web Audio 混音。
 
 YouTube 下載只限個人練習用途，請尊重版權同 YouTube 條款。

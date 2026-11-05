@@ -315,6 +315,14 @@
       <select id="cfgBars"><option value="0">自動</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
     </label>
     <hr>
+    <label class="field">分離樂器引擎
+      <select id="cfgSeparator">
+        <option value="auto">自動（有顯示卡就用 BS-RoFormer）</option>
+        <option value="roformer">BS-RoFormer（最乾淨，慢啲，第一次下載 700MB）</option>
+        <option value="demucs">Demucs（舊版，快）</option>
+      </select>
+      <span class="small muted">只影響之後新分析嘅歌；舊歌想用新引擎：開首歌 →「⚙ 譜設定 → ↻ 重新分析成首歌」。</span>
+    </label>
     <label class="field">歌詞模型（Whisper）
       <select id="cfgWhisper">
         <option value="auto">自動（按顯示卡 / 記憶體揀）</option>
@@ -357,7 +365,7 @@
     </div>
     <div class="ed-grid-wrap"><div class="ed-grid" id="edGrid"></div></div>
     <div class="ed-chords" id="edChords"></div>
-    <p class="small muted">撳格仔加 / 刪音符。改完撳「儲存」，譜、模擬器同 PDF 會一齊更新。</p>
+    <p class="small muted">撳格仔加 / 刪音符；<b>拖住音符</b>可以搬去第二格 / 第二件鼓，喺空格拖可以一次過畫幾粒（piano roll：向右拖 = 長啲，拖音符最尾一格 = 拉長）。改完撳「儲存」，譜、模擬器同 PDF 會一齊更新。</p>
     <div class="dlg-row">
       <button class="btn ghost sm" type="button" id="edUndo">↶ 還原上一個改動</button>
       <span class="grow"></span>

@@ -15,7 +15,7 @@ import audio_utils as au
 
 STAGES = [
     ("download", "下載音訊", 0.05),
-    ("separate", "分離樂器（Demucs）", 0.35),
+    ("separate", "分離樂器", 0.35),
     ("beats", "搵拍子同小節", 0.05),
     ("drums", "執鼓譜", 0.08),
     ("pitched", "執其他樂器譜", 0.22),
@@ -138,10 +138,32 @@ def run(job: Job):
 
         # ------------------------------------------------------------ separate
         job.stage("separate")
-        from separate import separate, detect_instruments
-        job.log("分離緊樂器，第一次會下載模型（大約 80MB）…")
-        stem_wavs = on_device(lambda d: separate(mix, work / "stems", d, progress=lambda p: job.stage("separate", p)),
-                              dev, job, "分離樂器")
+        from separate import separate, detect_instruments, roformer_installed
+        import config as appconfig
+        engine = appconfig.load().get("separator", "auto")
+        if engine == "auto":           # the big model only where there is a GPU to run it
+            engine = "roformer" if dev in ("cuda", "mps") else "demucs"
+        if engine == "roformer" and not roformer_installed():
+            job.log("BS-RoFormer 未裝（行多次 install），今次用 Demucs")
+            engine = "demucs"
+        job.log("分離緊樂器（BS-RoFormer），第一次會下載模型（大約 700MB）…" if engine == "roformer"
+                else "分離緊樂器（Demucs），第一次會下載模型（大約 80MB）…")
+        try:
+            if engine == "roformer":
+                # no silent CPU retry for the big model (far too slow): fall back to Demucs instead
+                stem_wavs = separate(mix, work / "stems", dev, progress=lambda p: job.stage("separate", p), engine=engine)
+            else:
+                stem_wavs = on_device(lambda d: separate(mix, work / "stems", d, progress=lambda p: job.stage("separate", p),
+                                                         engine=engine), dev, job, "分離樂器")
+        except Exception as exc:  # noqa: BLE001
+            if engine != "roformer":
+                raise
+            traceback.print_exc()
+            job.log(f"BS-RoFormer 分離失敗（{str(exc)[:120]}），改用 Demucs")
+            engine = "demucs"
+            stem_wavs = on_device(lambda d: separate(mix, work / "stems", d, progress=lambda p: job.stage("separate", p),
+                                                     engine="demucs"), dev, job, "分離樂器")
+        job.set(separator=engine)
         inst = detect_instruments(stem_wavs, mix)
         job.set(instruments=inst)
         job.log("偵測到樂器：" + "、".join(k for k, v in inst.items() if v["present"]))
@@ -175,7 +197,7 @@ def run(job: Job):
         drums = []
         try:
             from drums import transcribe_drums
-            drums = on_device(lambda d: transcribe_drums(stem_wavs["drums"], d), dev, job, "執鼓譜")
+            drums = on_device(lambda d: transcribe_drums(stem_wavs["drums"], d, mix_wav=mix), dev, job, "執鼓譜")
             write_json(f / "drums.json", drums)
             job.set(drumsVersion=DRUMS_VERSION)
             job.log(f"鼓：{len(drums)} 下")
@@ -304,6 +326,22 @@ def rebuild_score(job: Job, options: dict | None = None):
     from score import SCORE_FORMAT
     job.set(scoreFormat=SCORE_FORMAT, tracks=tracks, scoreOptions=opts, bpm=round(grid.bpm, 1), beatsPerBar=grid.beats_per_bar,
             scoreVersion=int(job.meta.get("scoreVersion", 0)) + 1)
+    render_std_drums(job, drums if "drums" not in hidden else [], raw["duration"])
+
+
+def render_std_drums(job: Job, drums: list, duration: float):
+    """The chart played on a sampled drum kit (stems/drums_std.mp3), kept in step
+    with every edit. Never fails the caller."""
+    try:
+        import drumkit
+        import hashlib
+        sig = hashlib.md5((json.dumps(drums, sort_keys=True) + f"|{drumkit.KIT_VERSION}").encode()).hexdigest()
+        if job.meta.get("drumsStdSig") == sig and (job.folder / "stems" / "drums_std.mp3").exists():
+            return
+        if drumkit.render_job(job.folder, drums, duration):
+            job.set(drumsStd=int(job.meta.get("drumsStd", 0)) + 1, drumsStdSig=sig)
+    except Exception as exc:  # noqa: BLE001
+        job.log(f"標準鼓聲整唔到：{exc}")
 
 
 def redo_drums(job: Job):
@@ -321,7 +359,22 @@ def redo_drums(job: Job):
     try:
         wav = tmp / "drums.wav"
         au.to_wav(src, wav, sr=44100, channels=2)
-        drums = on_device(lambda d: transcribe_drums(wav, d), device_name(), job, "執鼓譜")
+        # the full song again = all the stems added back together
+        mixwav = None
+        try:
+            parts = [job.folder / "stems" / f"{n}.mp3" for n in ("drums", "bass", "other", "vocals", "guitar", "piano")]
+            parts = [p for p in parts if p.exists()]
+            total = None
+            for p in parts:
+                y, sr_ = au.load_any(p)
+                total = y if total is None else total[: min(len(total), len(y))] + y[: min(len(total), len(y))]
+            if total is not None:
+                mixwav = tmp / "mix.wav"
+                au.save_wav(mixwav, total, sr_)
+        except Exception as exc:  # noqa: BLE001
+            job.log(f"（全曲再聽一次做唔到：{exc}）")
+            mixwav = None
+        drums = on_device(lambda d: transcribe_drums(wav, d, mix_wav=mixwav), device_name(), job, "執鼓譜")
     finally:
         _sh.rmtree(tmp, ignore_errors=True)
     editing.snapshot(job, "redrums")
@@ -331,7 +384,7 @@ def redo_drums(job: Job):
     return len(drums)
 
 
-DRUMS_VERSION = 2
+DRUMS_VERSION = 3
 
 
 def kit_crashes(drums: list, mode: str) -> list:

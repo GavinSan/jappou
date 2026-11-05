@@ -393,7 +393,7 @@ def build_song(grid: Grid, title: str, artist: str, drums: list[dict] | None,
 def _drum_art(note: gp.Note, art: str | None):
     if art == "ghost":
         note.effect.ghostNote = True
-    elif art == "accent":
+    elif art in ("accent", "rim"):     # rimshot: shown as an accented snare
         note.effect.accentuatedNote = True
     elif art in ("flam", "drag"):
         # flam = one grace note before the hit; drag = a quick double (shown as a grace hit)

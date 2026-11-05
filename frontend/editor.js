@@ -21,6 +21,7 @@
     { id: 'accent', label: '重音 >', mark: '>' },
     { id: 'flam', label: 'Flam（兩支棍差少少）', mark: 'fl' },
     { id: 'drag', label: 'Drag（前面兩下細聲）', mark: 'dr' },
+    { id: 'rim', label: 'Rimshot（打邊）', mark: 'rim' },
   ];
   const ART_MARK = Object.fromEntries(ARTS.map(a => [a.id, a.mark]));
   const PAT_ART = { x: '', o: '', g: 'ghost', '>': 'accent', f: 'flam', d: 'drag' };
@@ -338,9 +339,106 @@
 
   // ------------------------------------------------------------------ events
   function wire() {
-    $('#edGrid').addEventListener('click', e => {
+    // Mouse / touch: tap = add / remove; drag a hit (or note) to move it; drag on
+    // empty cells to paint several hits (piano roll: drag right to set the length,
+    // drag a note's last cell to stretch it). Keyboard (Enter / Space) = tap.
+    const grid = $('#edGrid');
+    let drag = null;
+    const cellAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('#edGrid .eg-cell') : null; };
+    const clearMarks = () => grid.querySelectorAll('.drop-target, .drag-src').forEach(el => el.classList.remove('drop-target', 'drag-src'));
+    grid.addEventListener('pointerdown', e => {
       const c = e.target.closest('.eg-cell');
-      if (!c) return;
+      if (!c || e.button > 0) return;
+      e.preventDefault();
+      grid.setPointerCapture(e.pointerId);
+      const s = Number(c.dataset.slot);
+      if (isGrid()) {
+        const key = `${c.dataset.note}:${s}`;
+        drag = { kind: E.cells.has(key) ? 'move' : 'paint', from: c, key, note: c.dataset.note, s, moved: false, painted: new Set() };
+        if (drag.kind === 'move') c.classList.add('drag-src');
+      } else if (c.dataset.i !== undefined) {
+        const i = Number(c.dataset.i), n = E.notes[i];
+        const edge = n.len > 1 && s === n.s + n.len - 1;
+        drag = { kind: edge ? 'stretch' : 'nmove', i, from: c, s0: s, p0: Number(c.dataset.pitch), orig: { ...n }, moved: false };
+      } else {
+        drag = { kind: 'draw', from: c, s0: s, p0: Number(c.dataset.pitch), moved: false, len: null };
+      }
+    });
+    grid.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const c = cellAt(e.clientX, e.clientY);
+      if (!c || c === drag.over) return;
+      drag.over = c;
+      if (c !== drag.from) drag.moved = true;
+      const s = Number(c.dataset.slot);
+      if (drag.kind === 'move') {
+        clearMarks(); drag.from.classList.add('drag-src');
+        if (c !== drag.from) c.classList.add('drop-target');
+      } else if (drag.kind === 'paint') {
+        if (c.dataset.note !== drag.note) return;            // paint along one row
+        for (const el of [drag.from, c]) {
+          const k = `${el.dataset.note}:${el.dataset.slot}`;
+          if (!E.cells.has(k)) { E.cells.set(k, { vel: E.art === 'ghost' ? 50 : 100, art: E.target === 'drums' ? E.art : '' }); drag.painted.add(k); el.classList.add('on'); }
+        }
+      } else if (drag.kind === 'nmove') {
+        const n = E.notes[drag.i];
+        const slots = N() * E.sub;
+        n.s = Math.max(0, Math.min(slots - 1, drag.orig.s + (s - drag.s0)));
+        n.len = Math.min(drag.orig.len, slots - n.s);
+        n.pitch = Math.max(E.lo, Math.min(E.hi, drag.orig.pitch + (Number(c.dataset.pitch) - drag.p0)));
+        E.dirty = true; render(); drag.from = grid.querySelector(`.eg-cell[data-i="${drag.i}"]`) || drag.from;
+      } else if (drag.kind === 'stretch') {
+        const n = E.notes[drag.i];
+        n.len = Math.max(1, Math.min(N() * E.sub - n.s, s - n.s + 1));
+        E.dirty = true; render();
+      } else if (drag.kind === 'draw') {
+        drag.len = Math.max(1, s - drag.s0 + 1);
+        clearMarks();
+        grid.querySelectorAll(`.eg-cell[data-pitch="${drag.p0}"]`).forEach(el => {
+          const t = Number(el.dataset.slot);
+          if (t >= drag.s0 && t < drag.s0 + drag.len) el.classList.add('drop-target');
+        });
+      }
+    });
+    const endDrag = e => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      clearMarks();
+      const c = cellAt(e.clientX, e.clientY) || d.from;
+      if (!d.moved) { tap(d.from); return; }
+      if (d.kind === 'move' && c && c !== d.from && c.dataset.note) {
+        const val = E.cells.get(d.key);
+        const to = `${c.dataset.note}:${c.dataset.slot}`;
+        E.cells.delete(d.key);
+        E.cells.set(to, val);
+        if (c.dataset.note === '42') E.cells.delete(`46:${c.dataset.slot}`);
+        if (c.dataset.note === '46') E.cells.delete(`42:${c.dataset.slot}`);
+      } else if (d.kind === 'draw') {
+        addNote(d.p0, d.s0, d.len || E.lenSlots);
+      }
+      E.dirty = true;
+      render();
+    };
+    grid.addEventListener('pointerup', endDrag);
+    grid.addEventListener('pointercancel', () => { drag = null; clearMarks(); render(); });
+    grid.addEventListener('click', e => {        // keyboard only (mouse / touch handled above)
+      if (e.detail !== 0) return;
+      const c = e.target.closest('.eg-cell');
+      if (c) tap(c);
+    });
+
+    function addNote(p, s, want) {
+      const slots = N() * E.sub;
+      let len = Math.min(want, slots - s);
+      for (const n of E.notes) if (n.pitch === p && n.s > s) len = Math.min(len, n.s - s);
+      E.notes.push({ pitch: p, s, len: Math.max(1, len), vel: 90 });
+      if (E.target === 'bass' || E.target === 'vocals' || E.target === 'guitar_lead') {
+        // single-line parts: starting a note cuts the previous one short
+        for (const n of E.notes) if (n !== E.notes[E.notes.length - 1] && n.s < s && n.s + n.len > s) n.len = s - n.s;
+      }
+    }
+    function tap(c) {
       const s = Number(c.dataset.slot);
       if (isGrid()) {
         const key = `${c.dataset.note}:${s}`;
@@ -357,20 +455,11 @@
       } else if (c.dataset.i !== undefined) {
         E.notes.splice(Number(c.dataset.i), 1);
       } else {
-        const p = Number(c.dataset.pitch);
-        const slots = N() * E.sub;
-        let len = Math.min(E.lenSlots, slots - s);
-        // don't run into the next note on the same pitch
-        for (const n of E.notes) if (n.pitch === p && n.s > s) len = Math.min(len, n.s - s);
-        E.notes.push({ pitch: p, s, len, vel: 90 });
-        if (E.target === 'bass' || E.target === 'vocals' || E.target === 'guitar_lead') {
-          // single-line parts: starting a note cuts the previous one short
-          for (const n of E.notes) if (n !== E.notes[E.notes.length - 1] && n.s < s && n.s + n.len > s) n.len = s - n.s;
-        }
+        addNote(Number(c.dataset.pitch), s, E.lenSlots);
       }
       E.dirty = true;
       render();
-    });
+    }
     $('#edArts').addEventListener('click', e => {
       const b = e.target.closest('[data-art]');
       if (b) { E.art = b.dataset.art; render(); }
