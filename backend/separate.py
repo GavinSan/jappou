@@ -35,7 +35,19 @@ def separate_roformer(wav_path: Path, out_dir: Path, device: str, progress=lambd
     from ml_collections import ConfigDict
     from bs_roformer import DEFAULT_MODEL, ensure_model_assets, get_model_from_config
     from bs_roformer.inference import SafeLoaderWithTuple
-    from bs_roformer.utils import demix_track, load_checkpoint_state
+    from bs_roformer.utils import demix_track
+    try:                                   # newer versions (GitHub main)
+        from bs_roformer.utils import load_checkpoint_state
+    except ImportError:                    # 0.1.x from PyPI
+        def load_checkpoint_state(path, map_location="cpu"):
+            try:
+                with torch.serialization.safe_globals([torch._C._nn.gelu]):
+                    state = torch.load(path, map_location=map_location)
+            except Exception:  # noqa: BLE001
+                state = torch.load(path, map_location=map_location, weights_only=False)
+            if isinstance(state, dict):
+                state.pop("_metadata", None)
+            return state
     import config as appconfig
 
     progress(0.02)
