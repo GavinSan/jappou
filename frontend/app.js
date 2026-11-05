@@ -757,7 +757,7 @@ async function initScore(opts = {}) {
   });
   let rendered = false;
   at.renderFinished.on(() => { rendered = true; $('#scoreLoading').hidden = true; });
-  at.postRenderFinished.on(() => { if (S.at === at) buildPlayheadMap(); });
+  at.postRenderFinished.on(() => { if (S.at === at) { buildPlayheadMap(); JP.drawCounts(at, $('#score'), !!S.drumCounts); } });
   at.playerReady.on(() => attachHandler());
   at.scoreLoaded.on(score => {
     // runs before the first render: put title, sync points, lyrics and chords in place
@@ -767,6 +767,7 @@ async function initScore(opts = {}) {
       JP.prepareScore(score, S.meta);
       if (S.evenBars) JP.evenBars(score, barsPerRow());
       JP.setRhythmStaff(score, S.meta.tracks, S.stave === 'tab');
+      JP.applyDrumStyle(score);
       JP.applySyncPoints(score, S.timing);
       const tracks = tracksForChip();
       applyLyricsToScore(tracks[0]);
@@ -1010,7 +1011,9 @@ function placePlayhead(t) {
 /* --- time <-> tick (alphaTab: 960 ticks per quarter, bar 0 at tick 0) --- */
 const timeToBeatPos = t => JP.timeToBeatPos(S.timing, t);
 const beatPosToTime = p => JP.beatPosToTime(S.timing, p);
-const applyLyricsToScore = track => JP.applyLyricsToScore(S.score, S.timing, S.lyrics, track, S.lyricsMode);
+const applyLyricsToScore = track => {
+  JP.applyLyricsToScore(S.score, S.timing, S.lyrics, track, S.lyricsMode);
+};
 
 /* ======================================================================
    Transport
@@ -1223,13 +1226,14 @@ async function setDrumSound(mode) {
   mixer.drumSound = mode;
   prefs.set('drumSound', mode);
   if (mode === 'std') {
+    // (the server only re-renders when the chart or the kit changed)
+    try {
+      if (!S.meta.drumsStd) toast('整緊標準鼓聲…');
+      S.meta = await api(`/api/jobs/${S.jobId}/drums-std`, { method: 'POST' });
+    } catch (err) { toast('標準鼓聲整唔到：' + err.message, 5000); }
     const v = Number(S.meta.drumsStd || 0);
     if (!mixer.stems.drums_std || mixer.stems.drums_std.version !== v) {
       try {
-        if (!v) {
-          toast('整緊標準鼓聲…');
-          S.meta = await api(`/api/jobs/${S.jobId}/drums-std`, { method: 'POST' });
-        }
         await mixer.addStem(S.jobId, 'drums_std', Number(S.meta.drumsStd || 0));
         mixer.stems.drums_std.version = Number(S.meta.drumsStd || 0);
       } catch (err) {
@@ -1320,6 +1324,40 @@ function renderLyricsBar(t) {
 }
 
 $('#lyricsMode').value = S.lyricsMode;
+/* drum chart: counting under the notes + noteheads (saved in the app settings so PDFs match) */
+async function loadDrumPrefs() {
+  try {
+    const cfg = await api('/api/config');
+    cfgCache = cfg;
+    S.drumCounts = !!cfg.drumCounts;
+    JP.setDrumStyle(cfg.drumStyle || null);
+    JP.applyDrumStyle(S.score);
+  } catch { /* defaults */ }
+  $('#btnCounts').setAttribute('aria-pressed', !!S.drumCounts);
+  if (S.score && (S.drumCounts || (cfgCache && cfgCache.drumStyle))) renderSelectedTracks();
+}
+async function saveDrumPrefs(part) {
+  try { cfgCache = { ...(cfgCache || {}), ...(await api('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(part) })) }; }
+  catch (err) { toast('儲存唔到：' + err.message); }
+  refreshExportSoon();
+}
+$('#btnCounts').onclick = () => {
+  S.drumCounts = !S.drumCounts;
+  $('#btnCounts').setAttribute('aria-pressed', S.drumCounts);
+  saveDrumPrefs({ drumCounts: S.drumCounts });
+  renderSelectedTracks();
+};
+for (const [id, key] of [['#optHeadHho', 'hho'], ['#optHeadCrash', 'crash'], ['#optHeadRide', 'ride'], ['#optHeadHh', 'hh']]) {
+  $(id).addEventListener('change', () => {
+    const style = { ...((cfgCache && cfgCache.drumStyle) || {}), [key]: $(id).value };
+    if (cfgCache) cfgCache.drumStyle = style;
+    JP.setDrumStyle(style);
+    JP.applyDrumStyle(S.score);
+    saveDrumPrefs({ drumStyle: style });
+    renderSelectedTracks();
+  });
+}
+setTimeout(loadDrumPrefs, 0);   // (after the whole file has run)
 $('#lyricsMode').addEventListener('change', e => { S.lyricsMode = e.target.value; prefs.set('lyricsMode', S.lyricsMode); renderSelectedTracks(); });
 
 /* Editor model: each row keeps a reference to its source line (with word timings),
@@ -1551,6 +1589,11 @@ $('#btnScoreSettings').onclick = () => {
   $('#optTriplets').checked = o.triplets !== false;
   $('#optGuitarSens').value = o.guitarSens || 'mid';
   $('#optCrashes').value = o.crashes || 'auto';
+  const ds = (cfgCache && cfgCache.drumStyle) || {};
+  $('#optHeadHho').value = ds.hho || 'circlex';
+  $('#optHeadCrash').value = ds.crash || 'heavyx';
+  $('#optHeadRide').value = ds.ride || 'x';
+  $('#optHeadHh').value = ds.hh || 'x';
   const tr = S.meta.trim || {};
   $('#optTrimStart').value = tr.start ? fmtPrecise(tr.start) : '';
   $('#optTrimEnd').value = tr.end ? fmtPrecise(tr.end) : '';

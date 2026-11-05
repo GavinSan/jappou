@@ -20,6 +20,8 @@ DEFAULTS = {
     "pdfLyrics": "line",        # line | word | off
     "pdfBars": 4,
     "whisperModel": "auto",
+    "drumCounts": False,        # write 1 e & a under the drum notes
+    "drumStyle": {},            # noteheads: {hho, crash, ride, hh}
     "separator": "auto",        # auto (RoFormer with a GPU, else Demucs) | roformer (BS-RoFormer SW, much cleaner) | demucs (faster)
 }
 

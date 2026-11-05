@@ -3,7 +3,7 @@
 // previous version can never be picked up by mistake.
 (function () {
   const ENGINE = 'vendor/alphatab/alphaTab-jp184.js';
-  const ENGINE_VERSION = '1.8.4-jp3';
+  const ENGINE_VERSION = '1.8.4-jp4';
   const CDNS = [
     'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/',
   ];

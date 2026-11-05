@@ -116,7 +116,7 @@
               const notes = [];
               for (const n of beat.notes) {
                 if (kind === 'drums') {
-                  const gm = n.percussionArticulation >= 0 ? n.percussionArticulation : n.realValue;
+                  const gm = n._jpId !== undefined ? n._jpId : n.percussionArticulation >= 0 ? n.percussionArticulation : n.realValue;
                   const piece = GM_TO_PIECE[gm];
                   if (piece) notes.push({ piece, open: gm === 46, hand: n._hand || null });
                 } else if (kind === 'fret') {

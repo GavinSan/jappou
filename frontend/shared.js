@@ -191,6 +191,159 @@
     lyrics._snapFor = score;
   }
 
+  /* ------------------------------------------------------------ drum notation style */
+  // SMuFL code points
+  const SYM = { x: 0xE0A9, circlex: 0xE0B3, heavyx: 0xE0F8, diamond: 0xE0DD, ornate: 0xE0AA, open: 0xE5E7 };
+  const DRUM_STYLE_DEFAULT = { hho: 'circlex', crash: 'heavyx', ride: 'x', hh: 'x' };
+  let drumStyle = { ...DRUM_STYLE_DEFAULT };
+  /** which notehead each drum uses: {hho: circlex|xo|circle, crash: heavyx|x|circlex|ornate,
+   *  ride: x|diamond|circlex, hh: x|circlex}. Takes effect in applyDrumStyle(score). */
+  function setDrumStyle(style) { drumStyle = { ...DRUM_STYLE_DEFAULT, ...(style || {}) }; }
+
+  /** Write the chosen noteheads into the score itself (each drum track gets its own
+   *  articulation list), so it also works when the engine draws in a worker. */
+  function applyDrumStyle(score) {
+    const M = window.__jpPercussion;
+    if (!M || !score) return;
+    const KIND = { 46: 'hho', 49: 'crash', 57: 'crash', 52: 'crash', 55: 'crash', 51: 'ride', 59: 'ride', 42: 'hh' };
+    for (const track of score.tracks) {
+      const staff = track.staves[0];
+      if (!staff || !staff.isPercussion) continue;
+      if (track._jpOwnArts === undefined) track._jpOwnArts = track.percussionArticulations.length;   // from the file
+      if (track._jpOwnArts > 0) continue;            // file brought its own list: leave it
+      const arts = [], index = new Map();
+      for (const bar of staff.bars) for (const v of bar.voices) for (const bt of v.beats) for (const n of bt.notes) {
+        if (n._jpId === undefined) n._jpId = n.percussionArticulation;
+        const id = n._jpId;
+        if (id < 0) continue;
+        if (!index.has(id)) {
+          const base = M.getArticulationById(id);
+          if (!base) { index.set(id, -1); continue; }
+          const a = Object.assign(Object.create(Object.getPrototypeOf(base)), base);
+          styleArticulation(a, KIND[id], M);
+          index.set(id, arts.length);
+          arts.push(a);
+        }
+        const k = index.get(id);
+        n.percussionArticulation = k >= 0 ? k : id;
+      }
+      track.percussionArticulations = arts;
+    }
+  }
+  function styleArticulation(a, kind, M) {
+    if (!kind) return;
+    const v = drumStyle[kind];
+    const head = sym => { a.noteHeadDefault = a.noteHeadHalf = a.noteHeadWhole = sym; };
+    if (kind === 'hho') {
+      if (v === 'xo') head(SYM.x);          // the little "o" above is drawn by drawCounts()
+      else if (v === 'circle') { const c = M.getArticulationById(92); head(c ? c.noteHeadDefault : SYM.circlex); }
+      else head(SYM.circlex);
+    } else if (kind === 'crash') head({ x: SYM.x, circlex: SYM.circlex, ornate: SYM.ornate }[v] || SYM.heavyx);
+    else if (kind === 'ride') head({ diamond: SYM.diamond, circlex: SYM.circlex }[v] || SYM.x);
+    else if (kind === 'hh') head(v === 'circlex' ? SYM.circlex : SYM.x);
+  }
+
+  /** Counting under the drum notes: 1 e & a 2 e & a … (triplets: 1 trip let). */
+  function applyCounts(score, tracks, on) {
+    for (const track of tracks || []) {
+      const staff = track.staves[0];
+      if (!staff || !staff.isPercussion) continue;
+      for (const bar of staff.bars) {
+        const voices = bar.voices;
+        const hasLyrics = voices.some(v => v.beats.some(b => b.lyrics && b.lyrics.some(x => x && !String(x).startsWith('\u200b'))));
+        // every count goes on the first voice (one line of text); where only the
+        // feet play, the hands voice has a rest there - the count goes on that rest
+        const played = new Set();
+        voices.forEach(v => v.beats.forEach(bt => {
+          if (!bt.isRest && !bt.isEmpty && !bt.graceType && bt.notes.length) played.add(bt.playbackStart);
+        }));
+        const done = new Set();
+        voices.forEach((v, vi) => v.beats.forEach(bt => {
+          // remove counts we put there before
+          if (bt.lyrics) {
+            bt.lyrics = bt.lyrics.filter(x => !String(x).startsWith('\u200b'));
+            if (!bt.lyrics.length || bt.lyrics.every(x => !x)) bt.lyrics = null;
+          }
+          if (!on || vi > 0 || bt.isEmpty || bt.graceType) return;
+          const tick = bt.playbackStart;
+          if (!played.has(tick) || done.has(tick)) return;
+          done.add(tick);
+          const den = bar.masterBar.timeSignatureDenominator || 4;
+          const unit = 3840 / den;              // ticks per counted beat
+          const k = Math.floor(tick / unit + 1e-6);
+          const f = (tick - k * unit) / unit;
+          const near = x => Math.abs(f - x) < 0.02;
+          let label = '';
+          if (near(0)) label = String(k + 1);
+          else if (near(0.25)) label = 'e';
+          else if (near(0.5)) label = '&';
+          else if (near(0.75)) label = 'a';
+          else if (near(1 / 3)) label = 'trip';
+          else if (near(2 / 3)) label = 'let';
+          if (!label) return;
+          const mark = '\u200b' + label;      // zero-width prefix = "our" text
+          if (hasLyrics) bt.lyrics = [(bt.lyrics && bt.lyrics[0]) || '', mark];
+          else bt.lyrics = [mark];
+        }));
+      }
+    }
+  }
+
+  /** Counting under the drum notes, drawn as one tidy row under each drum staff
+   *  (from the engine's note positions, so hands and feet share the same row). */
+  function countLabel(tick, den) {
+    const unit = 3840 / (den || 4);
+    const k = Math.floor(tick / unit + 1e-6);
+    const f = (tick - k * unit) / unit;
+    const near = x => Math.abs(f - x) < 0.02;
+    if (near(0)) return String(k + 1);
+    if (near(0.25)) return 'e';
+    if (near(0.5)) return '&';
+    if (near(0.75)) return 'a';
+    if (near(1 / 3)) return 'trip';
+    if (near(2 / 3)) return 'let';
+    return '';
+  }
+  function drawCounts(at, el, on) {
+    if (!el) return;
+    for (const old of el.querySelectorAll(':scope > .jp-counts')) old.remove();
+    const bl = at && at.boundsLookup;
+    const openO = drumStyle.hho === 'xo';
+    if ((!on && !openO) || !bl || !at.score) return;
+    let h = '';
+    for (let i = 0; i < at.score.masterBars.length; i++) {
+      const mb = bl.findMasterBarByIndex(i);
+      if (!mb) continue;
+      for (const bb of mb.bars) {
+        const bar = bb.bar || (bb.beats[0] && bb.beats[0].beat.voice.bar);
+        if (!bar || !bar.staff || !bar.staff.isPercussion) continue;
+        const xs = new Map();
+        for (const b of bb.beats) {
+          const bt = b.beat;
+          if (bt.isRest || bt.isEmpty || bt.graceType || !bt.notes.length) continue;
+          const tk = bt.playbackStart;
+          if (!xs.has(tk) || b.onNotesX < xs.get(tk)) xs.set(tk, b.onNotesX);
+          if (openO && bt.notes.some(n => (n._jpId !== undefined ? n._jpId : n.percussionArticulation) === 46)) {
+            const r0 = bb.realBounds;
+            h += `<span class="o" style="left:${b.onNotesX.toFixed(1)}px;top:${(r0.y - r0.h * 1.5).toFixed(1)}px">o</span>`;
+          }
+        }
+        if (!on) continue;
+        // the bounds only cover the 5 lines: go below the feet's down stems (~3 line gaps)
+        const rb = bb.realBounds, y = rb.y + rb.h + rb.h * 0.8;
+        const den = bar.masterBar.timeSignatureDenominator;
+        for (const [tk, x] of xs) {
+          const t = countLabel(tk, den);
+          if (t) h += `<span class="${/^\d/.test(t) ? 'n' : ''}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px">${t}</span>`;
+        }
+      }
+    }
+    const layer = document.createElement('div');
+    layer.className = 'jp-counts';
+    layer.innerHTML = h;
+    el.appendChild(layer);
+  }
+
   /* ------------------------------------------------------------ chords */
   const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const CHORD_IV = {
@@ -314,6 +467,6 @@
   }
 
   window.JP = { CHIPS, chipAvailable, tracksForChip, staveProfileFor, timeToBeatPos, beatPosToTime,
-    prepareScore, applySyncPoints, steadyBeats, applyLyricsToScore, setRhythmStaff, evenBars,
+    prepareScore, applySyncPoints, steadyBeats, setDrumStyle, applyDrumStyle, applyCounts, drawCounts, applyLyricsToScore, setRhythmStaff, evenBars,
     parseChord, guitarVoicing, applyChordsToScore, NAMES_SHARP, NAMES_FLAT };
 })();

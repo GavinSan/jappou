@@ -89,6 +89,7 @@
           </select>
         </label>
         <button class="btn ghost sm" id="btnEditLyrics">改歌詞</button>
+        <button class="btn ghost sm toggle" id="btnCounts" aria-pressed="false" title="喺鼓譜每粒音下面寫 1 e & a（三連音：trip let）">1 e & a</button>
         <span class="sep"></span>
         <button class="btn ghost sm" id="btnEdit" title="改譜：先撳一下譜上面要改嘅位置，再撳呢度（E 鍵）">✏️ 改譜</button>
         <button class="btn ghost sm" id="btnUndo" title="還原上一個改動" hidden>↶ 還原</button>
@@ -251,6 +252,14 @@
         <button class="btn sm" type="button" id="optTrimGo">✂ 剪 + 重新分析</button>
       </span>
       <span class="small muted">時間以原本首歌計。要重新分析（幾分鐘），改過嘅譜同歌詞會冇咗。</span>
+    </label>
+    <label class="field">鼓譜符頭（所有歌同 PDF 都會用）
+      <span class="inline heads-row">
+        開 Hi-hat <select id="optHeadHho"><option value="circlex">⊗ 圓圈 X</option><option value="xo">x + 上面 o</option><option value="circle">⊘ 圓圈</option></select>
+        Crash <select id="optHeadCrash"><option value="heavyx">✖ 粗 X</option><option value="x">x</option><option value="circlex">⊗ 圓圈 X</option><option value="ornate">✳ 花 X</option></select>
+        Ride <select id="optHeadRide"><option value="x">x</option><option value="diamond">◇ 菱形</option><option value="circlex">⊗ 圓圈 X</option></select>
+        Hi-hat <select id="optHeadHh"><option value="x">x</option><option value="circlex">⊗ 圓圈 X</option></select>
+      </span>
     </label>
     <label class="field">鼓組有幾多塊 Crash
       <select id="optCrashes">

@@ -17,7 +17,7 @@ import audio_utils as au
 
 KIT = Path(__file__).parent / "assets" / "drumkit"
 SR = 44100
-KIT_VERSION = 1
+KIT_VERSION = 2
 
 # GM note (+ how it is played) -> sample name
 PIECE = {
@@ -106,10 +106,32 @@ def render(drums: list[dict], duration: float) -> np.ndarray:
         else:
             out[a:a + m] += s[:m] * g
     out += hh_buf
-    peak = float(np.abs(out).max()) if len(out) else 0.0
-    if peak > 0.98:
-        out *= 0.98 / peak
     return out[: int(duration * SR) + SR]
+
+
+def _rms(y: np.ndarray) -> float:
+    """Loudness of the busy parts (ignores silence)."""
+    m = y.mean(axis=1) if y.ndim == 2 else y
+    win = SR // 10
+    n = len(m) // win
+    if n < 1:
+        return float(np.sqrt(np.mean(m ** 2)) + 1e-9)
+    e = np.sqrt((m[: n * win].reshape(n, win) ** 2).mean(axis=1))
+    e = e[e > e.max() * 0.05] if e.max() > 0 else e
+    return float(np.sqrt(np.mean(e ** 2)) + 1e-9)
+
+
+def finish(y: np.ndarray, match: np.ndarray | None = None) -> np.ndarray:
+    """As loud as the separated drum track (a little louder: it is cleaner),
+    with a soft limiter instead of turning everything down for one loud crash."""
+    target = _rms(match) * 1.25 if match is not None and len(match) else 0.18
+    target = min(max(target, 0.08), 0.3)
+    y = y * (target / _rms(y))
+    knee = 0.8
+    a = np.abs(y)
+    over = a > knee
+    y[over] = np.sign(y[over]) * (knee + (1 - knee) * np.tanh((a[over] - knee) / (1 - knee)))
+    return y.astype(np.float32)
 
 
 def render_job(folder: Path, drums: list[dict], duration: float) -> Path | None:
@@ -117,6 +139,14 @@ def render_job(folder: Path, drums: list[dict], duration: float) -> Path | None:
     if not available() or not drums:
         return None
     y = render(drums, duration)
+    ref = None
+    orig = folder / "stems" / "drums.mp3"
+    if orig.exists():
+        try:
+            ref, _ = au.load_any(orig)
+        except Exception:  # noqa: BLE001
+            ref = None
+    y = finish(y, ref)
     stems = folder / "stems"
     stems.mkdir(exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="jappou_kit_"))

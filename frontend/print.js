@@ -22,6 +22,9 @@
     document.getElementById('note').textContent = `${label} · ${Math.round(timing.bpm)} BPM${meta.key ? ' · 調：' + meta.key : ''} · 執譜機自動生成，僅供參考`;
     await window.alphaTabReady;
     const buf = await fetch(`/api/jobs/${id}/file/score.gp5`, { cache: 'no-store' }).then(r => r.arrayBuffer());
+    let appCfg = null;
+    try { appCfg = await fetch('/api/config', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)); } catch { appCfg = null; }
+    JP.setDrumStyle(appCfg && appCfg.drumStyle);
 
     const at = new alphaTab.AlphaTabApi(document.getElementById('sheet'), {
       core: { fontDirectory: window.ALPHATAB_BASE + 'font/', engine: 'svg', enableLazyLoading: false, useWorkers: false, logLevel: 'warning' },
@@ -47,6 +50,7 @@
     at.scoreLoaded.on(score => {
       JP.prepareScore(score, meta);
       JP.setRhythmStaff(score, metaTracks, stave === 'tab');
+      JP.applyDrumStyle(score);
       const tracks = JP.tracksForChip(score, metaTracks, chip);
       JP.applyLyricsToScore(score, timing, lyrics, tracks[0], lyricsMode);
       JP.applyChordsToScore(score, timing, chordData.chords || [], tracks, { diagrams: chip === 'guitar' });
@@ -54,6 +58,7 @@
     const done = new Promise(res => at.postRenderFinished.on(res));
     at.load(new Uint8Array(buf), indexes);
     await done;
+    JP.drawCounts(at, at.container && at.container.element ? at.container.element : document.querySelector('#sheet'), !!(appCfg && appCfg.drumCounts));
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     await new Promise(r => setTimeout(r, 300));
     window.__printReady = true;

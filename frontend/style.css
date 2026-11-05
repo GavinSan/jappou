@@ -382,3 +382,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .eg-cell.drag-src { outline: 2px dashed var(--accent); outline-offset: -2px; opacity: .55; }
 .eg-cell.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(242,163,58,.35); }
 .eg-cell.on.art-rim { background: #ffd36b; }
+.jp-counts { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 5; }
+.jp-counts span { position: absolute; transform: translateX(-10%); font: italic 11.5px/1 "Noto Sans HK", sans-serif; color: #5b5146; white-space: nowrap; }
+.jp-counts span.n { font-weight: 700; color: #222; font-style: normal; }
+.jp-counts span.o { font: 700 12px/1 'Noto Sans HK', sans-serif; font-style: normal; color: #111; transform: translateX(-20%); }
